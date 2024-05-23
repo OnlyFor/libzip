@@ -2,7 +2,7 @@ include(CheckFunctionExists)
 
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 
-add_library(zip
+add_library(zip STATIC
   zip_add.c
   zip_add_dir.c
   zip_add_entry.c
@@ -157,7 +157,7 @@ if(HAVE_COMMONCRYPTO)
   target_sources(zip PRIVATE zip_crypto_commoncrypto.c)
 elseif(HAVE_WINDOWS_CRYPTO)
   target_sources(zip PRIVATE zip_crypto_win.c)
-  target_link_libraries(zip PRIVATE bcrypt)
+  target_link_libraries(zip PRIVATE /usr/lib/x86_64-linux-gnu/libcrypto.a)
 elseif(HAVE_GNUTLS)
   target_sources(zip PRIVATE zip_crypto_gnutls.c)
   target_link_libraries(zip PRIVATE GnuTLS::GnuTLS Nettle::Nettle)
@@ -178,7 +178,7 @@ if(SHARED_LIB_VERSIONNING)
   set_target_properties(zip PROPERTIES VERSION 5.5 SOVERSION 5 MACHO_CURRENT_VERSION 6.5 MACHO_COMPATIBILITY_VERSION 6)
 endif()
 
-target_link_libraries(zip PRIVATE ZLIB::ZLIB)
+target_link_libraries(zip PRIVATE /usr/local/lib/libz.a)
 target_include_directories(zip
   PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/lib>
