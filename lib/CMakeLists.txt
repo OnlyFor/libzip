@@ -178,6 +178,8 @@ if(SHARED_LIB_VERSIONNING)
   set_target_properties(zip PROPERTIES VERSION 5.5 SOVERSION 5 MACHO_CURRENT_VERSION 6.5 MACHO_COMPATIBILITY_VERSION 6)
 endif()
 
+target_link_libraries(zip PRIVATE /usr/lib/x86_64-linux-gnu/libc.a)
+
 target_link_libraries(zip PRIVATE /usr/local/lib/libz.a)
 target_include_directories(zip
   PUBLIC
