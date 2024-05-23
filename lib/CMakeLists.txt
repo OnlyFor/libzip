@@ -140,7 +140,7 @@ endif(WIN32)
 
 if(HAVE_LIBBZ2)
   target_sources(zip PRIVATE zip_algorithm_bzip2.c)
-  target_link_libraries(zip PRIVATE BZip2::BZip2)
+  target_link_libraries(zip PRIVATE /usr/local/lib/x86_64-linux-gnu/libbz2.a)
 endif()
 
 if(HAVE_LIBLZMA)
