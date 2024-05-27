@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.5.0)
 
+# Get the current date and time
+string(TIMESTAMP CURRENT_DATE "%Y-%m-%d_%H-%M-%S" UTC)
+
+# Define the suffix variable
+set(SUFFIX "_${CURRENT_DATE}")
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 if (${CMAKE_VERSION} VERSION_LESS "3.17.0")
   list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake-compat)
