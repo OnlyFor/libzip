@@ -7,7 +7,8 @@ endif()
 
 string(TIMESTAMP PROJECT_BUILD_DATE "%Y-%m-%d" UTC)
 project(libzip
-  VERSION 1.10.1-${PROJECT_BUILD_DATE}
+  VERSION 1.10.1
+  PATCH_VERSION ${PROJECT_BUILD_DATE}
   LANGUAGES C)
 # project(libzip
 #   VERSION 1.10.1
