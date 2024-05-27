@@ -5,9 +5,13 @@ if (${CMAKE_VERSION} VERSION_LESS "3.17.0")
   list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake-compat)
 endif()
 
+string(TIMESTAMP PROJECT_BUILD_DATE "%Y-%m-%d" UTC)
 project(libzip
-  VERSION 1.10.1
+  VERSION 1.10.1-${PROJECT_BUILD_DATE}
   LANGUAGES C)
+# project(libzip
+#   VERSION 1.10.1
+#   LANGUAGES C)
 
 option(ENABLE_COMMONCRYPTO "Enable use of CommonCrypto" ON)
 option(ENABLE_GNUTLS "Enable use of GnuTLS" ON)
