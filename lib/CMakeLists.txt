@@ -145,12 +145,12 @@ endif()
 
 if(HAVE_LIBLZMA)
   target_sources(zip PRIVATE zip_algorithm_xz.c)
-  target_link_libraries(zip PRIVATE LibLZMA::LibLZMA)
+  target_link_libraries(zip PRIVATE /usr/local/lib/liblzma.a)
 endif()
 
 if(HAVE_LIBZSTD)
   target_sources(zip PRIVATE zip_algorithm_zstd.c)
-  target_link_libraries(zip PRIVATE ${zstd_TARGET})
+  target_link_libraries(zip PRIVATE /usr/local/lib/x86_64-linux-gnu/libzstd.a)
 endif()
 
 if(HAVE_COMMONCRYPTO)
