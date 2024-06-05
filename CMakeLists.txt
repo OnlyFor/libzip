@@ -25,7 +25,7 @@ option(ENABLE_FDOPEN "Enable zip_fdopen, which is not allowed in Microsoft CRT s
 option(BUILD_TOOLS "Build tools in the src directory (zipcmp, zipmerge, ziptool)" ON)
 option(BUILD_REGRESS "Build regression tests" ON)
 option(BUILD_OSSFUZZ "Build fuzzers for ossfuzz" ON)
-option(BUILD_EXAMPLES "Build examples" ON)
+# option(BUILD_EXAMPLES "Build examples" ON)
 # option(BUILD_DOC "Build documentation" ON)
 
 include(CheckFunctionExists)
