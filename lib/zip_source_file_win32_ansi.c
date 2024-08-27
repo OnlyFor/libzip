@@ -41,10 +41,9 @@ static BOOL __stdcall ansi_get_file_attributes_ex(const void *name, GET_FILEEX_I
 static void ansi_make_tempname(char *buf, size_t len, const char *name, zip_uint32_t i);
 static BOOL __stdcall ansi_move_file(const void *from, const void *to, DWORD flags);
 static BOOL __stdcall ansi_set_file_attributes(const void *name, DWORD attributes);
+static HANDLE __stdcall ansi_find_first_file(const void *name, void* data);
 
 /* clang-format off */
-DONT_WARN_INCOMPATIBLE_FN_PTR_BEGIN
-
 zip_win32_file_operations_t ops_ansi = {
     ansi_allocate_tempname,
     ansi_create_file,
@@ -54,10 +53,9 @@ zip_win32_file_operations_t ops_ansi = {
     ansi_make_tempname,
     ansi_move_file,
     ansi_set_file_attributes,
-    strdup
+    strdup,
+    ansi_find_first_file,
 };
-
-DONT_WARN_INCOMPATIBLE_FN_PTR_END
 /* clang-format on */
 
 ZIP_EXTERN zip_source_t *
@@ -125,4 +123,10 @@ static BOOL __stdcall
 ansi_set_file_attributes(const void *name, DWORD attributes)
 {
     return SetFileAttributesA((const char *)name, attributes);
+}
+
+static HANDLE __stdcall
+ansi_find_first_file(const void *name, void *data)
+{
+    return FindFirstFileA((const char *)name, data); 
 }

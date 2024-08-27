@@ -377,9 +377,11 @@ struct zip_cdir {
 
     zip_uint32_t this_disk;
     zip_uint32_t eocd_disk;
-    zip_uint64_t num_entries;
+    zip_uint64_t disk_entries; /* number of entries on this disk */
+    zip_uint64_t num_entries;  /* number of entries on all disks */
     zip_uint64_t size;     /* size of central directory */
     zip_uint64_t offset;   /* offset of central directory in file */
+    zip_uint64_t eocd_offset; /* offset of EOCD in file */
     zip_string_t *comment; /* zip archive comment */
     bool is_zip64;         /* central directory in zip64 format */
 };
@@ -671,4 +673,4 @@ int _zip_unchange(zip_t *, zip_uint64_t, int);
 void _zip_unchange_data(zip_entry_t *);
 int _zip_write(zip_t *za, const void *data, zip_uint64_t length);
 
-#endif /* zipint.h */
+#endif /* _HAD_ZIPINT_H */
