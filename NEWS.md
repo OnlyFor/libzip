@@ -1,4 +1,8 @@
-# X.X [Unreleased]
+# 1.11.1 [2024-09-19]
+
+* Fix zipconf.h for version number with missing third component.
+
+# 1.11 [2024-09-19]
 
 * Stop searching after finding acceptable central directory, even if it contains inconsistencies.
 * Only write Zip64 EOCD if fields don't fit in normal EOCD. Previously libzip also wrote it when any directory entry required Zip64.

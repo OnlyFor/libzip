@@ -7,8 +7,12 @@ endif()
 
 string(TIMESTAMP PROJECT_BUILD_DATE_NUM "%Y%m%d" UTC)
 project(libzip
-  VERSION 1.10.1.${PROJECT_BUILD_DATE_NUM}
+  VERSION 1.11.1
   LANGUAGES C)
+
+if(NOT libzip_VERSION_PATCH)
+  set(libzip_VERSION_PATCH 0)
+endif()
 
 option(ENABLE_COMMONCRYPTO "Enable use of CommonCrypto" ON)
 option(ENABLE_GNUTLS "Enable use of GnuTLS" ON)
