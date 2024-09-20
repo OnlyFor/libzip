@@ -7,7 +7,7 @@ endif()
 
 string(TIMESTAMP PROJECT_BUILD_DATE_NUM "%Y%m%d" UTC)
 project(libzip
-  VERSION 1.11.1
+  VERSION 1.11.1.${PROJECT_BUILD_DATE_NUM}
   LANGUAGES C)
 
 if(NOT libzip_VERSION_PATCH)
