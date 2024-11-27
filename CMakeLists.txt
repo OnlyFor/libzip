@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 if (${CMAKE_VERSION} VERSION_LESS "3.17.0")
@@ -192,10 +192,6 @@ check_type_size("size_t" SIZEOF_SIZE_T)
 check_c_source_compiles("#include <sys/ioctl.h>
 #include <linux/fs.h>
 int main(int argc, char *argv[]) { unsigned long x = FICLONERANGE; }" HAVE_FICLONERANGE)
-
-check_c_source_compiles("
-int foo(char * _Nullable bar);
-int main(int argc, char *argv[]) { }" HAVE_NULLABLE)
 
 test_big_endian(WORDS_BIGENDIAN)
 
@@ -457,13 +453,6 @@ elseif(LONG_LIBZIP EQUAL 8)
   set(ZIP_UINT64_T "unsigned long")
 elseif(LONG_LONG_LIBZIP EQUAL 8)
   set(ZIP_UINT64_T "unsigned long long")
-endif()
-
-if(HAVE_NULLABLE)
-  set(ZIP_NULLABLE_DEFINES)
-else()
-  set(ZIP_NULLABLE_DEFINES "#define _Nullable
-#define _Nonnull")
 endif()
 
 # write out config file
