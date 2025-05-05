@@ -30,7 +30,7 @@
 .\" OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 .\" IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "LIBZIP" "3" "August 21, 2024" "NiH" "Library Functions Manual"
+.TH "LIBZIP" "3" "May 5, 2025" "NiH" "Library Functions Manual"
 .nh
 .if n .ad l
 .SH "NAME"
@@ -63,13 +63,43 @@ For this reason, when modifying zip archives,
 \fBlibzip\fR
 writes to a temporary file and replaces the original
 zip archive atomically.
-.PP
-Below there are two sections listing functions: one for how to read
-from zip archives and one for how to create/modify them.
 .SH "GENERAL NOTES"
+When adding files to an archive, the file data is only read when the
+new archive is written.
+Therefore all files added must remain valid until the archive is
+closed with
+zip_close(3)
+or
+zip_discard(3).
+.PP
 Unless explicitly documented, functions should not be passed
 \fRNULL\fR
 pointers as arguments.
+.SH "DATA TYPES"
+These data types correspond to central concepts in
+\fBlibzip\fR.
+Most of them are private, meaning you can't allocate them or access their members directly.
+This allows extending the structures in the future without breaking compatibility.
+.SS "zip_t"
+This type represents an opened archive.
+See
+zip(5).
+.SS "zip_file_t"
+This type represents a file from an archive that has been opened for reading.
+See
+zip_file(5).
+.SS "zip_source_t"
+This type represents a source (or destination) of data.
+It is used in
+\fBlibzip\fR
+for providing data when adding or replacing files, accessing data from a file inside an archive, and the data for the archive as a whole.
+See
+zip_source(5).
+.SS "zip_error_t"
+This type represents information about an error.
+Its type can be checked against pre-defined constants and it can be converted to a human readable string.
+See
+zip_error(5).
 .SH "FILE NAMES"
 .SS "Encoding"
 Names of files in the host file system are expected in UTF-8 encoding.
@@ -113,6 +143,9 @@ source archive as well.
 \fB\(bu\fR
 zip_open(3)
 .PD 0
+.TP 4n
+\fB\(bu\fR
+zip_open_from_source(3)
 .TP 4n
 \fB\(bu\fR
 zip_fdopen(3)
@@ -323,7 +356,7 @@ zip_set_archive_comment(3)
 zip_set_archive_flag(3)
 .TP 4n
 \fB\(bu\fR
-zip_source(3)
+zip_source(5)
 .PD
 .SH "ERROR HANDLING"
 .TP 4n
