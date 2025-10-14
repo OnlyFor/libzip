@@ -31,6 +31,8 @@
   IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include "zipint.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,8 +40,6 @@
 #include <sys/types.h>
 #include <time.h>
 #include <zlib.h>
-
-#include "zipint.h"
 
 static zip_string_t *_zip_dirent_process_ef_utf_8(const zip_dirent_t *de, zip_uint16_t id, zip_string_t *str, bool check_consistency);
 static zip_extra_field_t *_zip_ef_utf8(zip_uint16_t, zip_string_t *, zip_error_t *);
@@ -503,6 +503,20 @@ _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, boo
                     _zip_buffer_free(buffer);
                 }
                 return -1;
+            }
+        }
+
+        if (check_consistency) {
+            zip_uint8_t *p;
+
+            for (p = zde->filename->raw; p < zde->filename->raw + zde->filename->length; p++) {
+                if (*p == 0) {
+                    zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_NUL_IN_FILENAME);
+                    if (!from_buffer) {
+                        _zip_buffer_free(buffer);
+                    }
+                    return -1;
+                }
             }
         }
     }
