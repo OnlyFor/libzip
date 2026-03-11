@@ -61,6 +61,7 @@ struct archive {
     const char *name;
     zip_t *za;
     zip_uint64_t nentry;
+    zip_uint64_t nentry_allocated;
     struct entry *entry;
     const char *comment;
     size_t comment_length;
@@ -183,6 +184,9 @@ Copyright (C) 2003-2025 Dieter Baron and Thomas Klausner\n\
 
 #define BOTH_ARE_ZIPS(a) (a[0].za && a[1].za)
 
+void archive_deinit(struct archive *a);
+void archive_grow_entries(struct archive *a, zip_uint64_t amount);
+static void archive_init(struct archive *a);
 static int comment_compare(const char *c1, size_t l1, const char *c2, size_t l2);
 static int compare_list(char *const name[2], const void *list[2], const zip_uint64_t list_length[2], int element_size, int (*cmp)(const void *a, const void *b), int (*ignore)(const void *list, int last, const void *other), int (*check)(char *const name[2], const void *a, const void *b), void (*print)(char side, const void *element), void (*start_file)(const void *element));
 static int compare_zip(char *const zn[]);
@@ -191,6 +195,8 @@ static int ef_order(const void *a, const void *b);
 static void ef_print(char side, const void *p);
 static int ef_read(zip_t *za, zip_uint64_t idx, struct entry *e);
 static int entry_cmp(const void *p1, const void *p2);
+void entry_deinit(struct entry *e);
+void entry_init(struct entry *e);
 static int entry_ignore(const void *p1, int last, const void *o);
 static int entry_paranoia_checks(char *const name[2], const void *p1, const void *p2);
 static void entry_print(char side, const void *p);
@@ -210,8 +216,7 @@ int plus_count = 0, minus_count = 0;
 diff_output_t output;
 
 
-int
-main(int argc, char *const argv[]) {
+int main(int argc, char *const argv[]) {
     int c;
 
     progname = argv[0];
@@ -271,43 +276,59 @@ main(int argc, char *const argv[]) {
         exit(2);
     }
 
-    exit((compare_zip(argv + optind) == 0) ? 0 : 1);
+    exit(compare_zip(argv + optind));
 }
 
+/*
+  Compares zip archives or directories and prints differences.
 
-static int
-compare_zip(char *const zn[]) {
+  Arguments:
+    zn: names of zip archive or directories to compare
+
+  Returns:
+    0: zip archives are the same
+    1: zip archives differ
+    2: error
+*/
+static int compare_zip(char *const zn[]) {
     struct archive a[2];
     struct entry *e[2];
     zip_uint64_t n[2];
     int i;
     int res;
 
+    archive_init(&a[0]);
+    archive_init(&a[1]);
+
     for (i = 0; i < 2; i++) {
         a[i].name = zn[i];
-        a[i].entry = NULL;
-        a[i].nentry = 0;
-        a[i].za = NULL;
-        a[i].comment = NULL;
-        a[i].comment_length = 0;
 
         if (is_directory(zn[i])) {
 #ifndef HAVE_FTS_H
             fprintf(stderr, "%s: reading directories not supported\n", progname);
-            exit(2);
+            archive_deinit(&a[0]);
+            archive_deinit(&a[1]);
+            return 2;
 #else
-            if (list_directory(zn[i], a + i) < 0)
-                exit(2);
+            if (list_directory(zn[i], a + i) < 0) {
+                archive_deinit(&a[0]);
+                archive_deinit(&a[1]);
+                return 2;
+            }
             have_directory = 1;
             paranoid = 0; /* paranoid checks make no sense for directories, since they compare zip metadata */
 #endif
         }
         else {
-            if (list_zip(zn[i], a + i) < 0)
-                exit(2);
+            if (list_zip(zn[i], a + i) < 0) {
+                archive_deinit(&a[0]);
+                archive_deinit(&a[1]);
+                return 2;
+            }
         }
-        if (a[i].nentry > 0)
+        if (a[i].nentry > 0) {
             qsort(a[i].entry, a[i].nentry, sizeof(a[i].entry[0]), entry_cmp);
+        }
     }
 
     diff_output_init(&output, verbose, zn);
@@ -332,37 +353,29 @@ compare_zip(char *const zn[]) {
         }
     }
 
-    for (i = 0; i < 2; i++) {
-        zip_uint64_t j;
-
-        if (a[i].za) {
-            zip_close(a[i].za);
-        }
-        for (j = 0; j < a[i].nentry; j++) {
-            free(a[i].entry[j].name);
-        }
-        free(a[i].entry);
-    }
+    archive_deinit(&a[0]);
+    archive_deinit(&a[1]);
 
     if (summary) {
         printf("%d files removed, %d files added\n", minus_count, plus_count);
     }
 
-    switch (res) {
-    case 0:
-        exit(0);
-
-    case 1:
-        exit(1);
-
-    default:
-        exit(2);
-    }
+    return res;
 }
 
+
 #ifdef HAVE_FTS_H
-static zip_int64_t
-compute_crc(const char *fname) {
+/*
+  Computes the CRC of a file.
+
+  Arguments:
+    fname: name of file
+
+  Returns:
+    >=0: crc of file
+    -1: error
+*/
+static zip_int64_t compute_crc(const char *fname) {
     FILE *f;
     uLong crc = crc32(0L, Z_NULL, 0);
     size_t n;
@@ -391,26 +404,45 @@ compute_crc(const char *fname) {
 #endif
 
 
-static int
-is_directory(const char *name) {
+/*
+  Checks if it is directory.
+
+  Arguments:
+    name: name of the file or directory
+
+  Returns:
+    0: is not a directory
+    1: is a directory
+*/
+static int is_directory(const char *name) {
     struct stat st;
 
-    if (stat(name, &st) < 0)
+    if (stat(name, &st) < 0) {
         return 0;
+    }
 
     return S_ISDIR(st.st_mode);
 }
 
 
+/*
+  Lists the contents of directory.
+
+  Arguments:
+    name: name of the directory
+    a: archive to add entries to
+
+  Returns;
+    0: success
+    1: error
+*/
 #ifdef HAVE_FTS_H
-static int
-list_directory(const char *name, struct archive *a) {
+static int list_directory(const char *name, struct archive *a) {
     FTS *fts;
     FTSENT *ent;
-    zip_uint64_t nalloc;
     size_t prefix_length;
     size_t name_length;
-    char* normalized_name;
+    char *normalized_name;
 
     name_length = strlen(name);
     if (name_length == 0) {
@@ -421,10 +453,10 @@ list_directory(const char *name, struct archive *a) {
     normalized_name = strdup(name);
     if (normalized_name == NULL) {
         fprintf(stderr, "%s: malloc failure\n", progname);
-        exit(1);
+        return -1;
     }
 
-    while (name_length > 0 && normalized_name[name_length-1] == '/') {
+    while (name_length > 0 && normalized_name[name_length - 1] == '/') {
         name_length -= 1;
     }
     normalized_name[name_length] = '\0';
@@ -445,8 +477,6 @@ list_directory(const char *name, struct archive *a) {
         return -1;
     }
 
-    nalloc = 0;
-
     while ((ent = fts_read(fts))) {
         zip_int64_t crc;
 
@@ -463,24 +493,14 @@ list_directory(const char *name, struct archive *a) {
         case FTS_ERR:
         case FTS_NS:
         case FTS_SLNONE:
-            /* TODO: error */
+            fprintf(stderr, "%s: error reading directory '%s': %s\n", progname, ent->fts_path, strerror(errno));
+            free(normalized_name);
             fts_close(fts);
             return -1;
 
         case FTS_D:
         case FTS_F:
-            if (a->nentry >= nalloc) {
-                nalloc += 16;
-                if (nalloc > SIZE_MAX / sizeof(a->entry[0])) {
-                    fprintf(stderr, "%s: malloc failure\n", progname);
-                    exit(1);
-                }
-                a->entry = realloc(a->entry, sizeof(a->entry[0]) * nalloc);
-                if (a->entry == NULL) {
-                    fprintf(stderr, "%s: malloc failure\n", progname);
-                    exit(1);
-                }
-            }
+            archive_grow_entries(a, 1);
 
             if (ent->fts_info == FTS_D) {
                 char *dir_name;
@@ -530,8 +550,18 @@ list_directory(const char *name, struct archive *a) {
 #endif
 
 
-static int
-list_zip(const char *name, struct archive *a) {
+/*
+  Lists the contents of zip archive.
+
+  Arguments:
+    name: name of the zip archive
+    a: archive to add entries to
+
+  Returns:
+    0: success
+    1: error
+*/
+static int list_zip(const char *name, struct archive *a) {
     zip_t *za;
     int err;
     struct zip_stat st;
@@ -548,8 +578,9 @@ list_zip(const char *name, struct archive *a) {
     a->za = za;
     a->nentry = (zip_uint64_t)zip_get_num_entries(za, 0);
 
-    if (a->nentry == 0)
+    if (a->nentry == 0) {
         a->entry = NULL;
+    }
     else {
         if ((a->nentry > SIZE_MAX / sizeof(a->entry[0])) || (a->entry = (struct entry *)malloc(sizeof(a->entry[0]) * a->nentry)) == NULL) {
             fprintf(stderr, "%s: malloc failure\n", progname);
@@ -559,15 +590,16 @@ list_zip(const char *name, struct archive *a) {
         j = 0;
         for (i = 0; i < a->nentry; i++) {
             if (zip_stat_index(za, i, 0, &st) < 0) {
-                fprintf(stderr, "%s: cannot stat file %u in zip archive '%s': %s\n", progname, i, name, zip_strerror(za));
+                fprintf(stderr, "%s: warning: cannot stat file %u in zip archive '%s': %s\n", progname, i, name, zip_strerror(za));
                 continue;
             }
 
             a->entry[j].name = strdup(st.name);
             a->entry[j].size = st.size;
             a->entry[j].crc = st.crc;
-            if (test_files)
+            if (test_files) {
                 test_file(za, i, name, st.name, st.size, st.crc);
+            }
             if (paranoid) {
                 a->entry[j].comp_method = st.comp_method;
                 ef_read(za, i, a->entry + j);
@@ -591,7 +623,7 @@ list_zip(const char *name, struct archive *a) {
             a->comment = NULL;
             a->comment_length = 0;
         }
-        
+
         a->nentry = j;
     }
 
@@ -599,23 +631,56 @@ list_zip(const char *name, struct archive *a) {
 }
 
 
-static int
-comment_compare(const char *c1, size_t l1, const char *c2, size_t l2) {
-    if (l1 != l2)
+/*
+  Compares comments.
+
+  Arguments:
+    c1: first comment
+    l1: length of first comment
+    c2: second comment
+    l2: length of second comment
+
+  Returns:
+    <0: c1 < c2
+    0: c1 == c2
+    >0: c1 > c2
+*/
+static int comment_compare(const char *c1, size_t l1, const char *c2, size_t l2) {
+    if (l1 != l2) {
         return 1;
+    }
 
-    if (l1 == 0)
+    if (l1 == 0) {
         return 0;
+    }
 
-    if (c1 == NULL || c2 == NULL)
+    if (c1 == NULL || c2 == NULL) {
         return c1 == c2;
+    }
 
     return memcmp(c1, c2, (size_t)l2);
 }
 
 
-static int
-compare_list(char *const name[2], const void *list[2], const zip_uint64_t list_length[2], int element_size, int (*cmp)(const void *a, const void *b), int (*ignore)(const void *list, int last, const void *other), int (*check)(char *const name[2], const void *a, const void *b), void (*print)(char side, const void *element), void (*start_file)(const void *element)) {
+/*
+  Compares two lists of elements and prints differences.
+
+  Arguments:
+    name: names of the two lists being compared
+    list: the two lists being compared
+    list_length: the lengths of the two lists
+    element_size: the size of each element in the lists
+    cmp: function to compare two elements, returning <0, 0, >0
+    ignore: function to check if an element should be ignored
+    check: function to check if two elements are equal
+    print: function to print an element
+    start_file: function to print the start of a file
+
+  Returns:
+    0: no differences
+    1: lists differ
+*/
+static int compare_list(char *const name[2], const void *list[2], const zip_uint64_t list_length[2], int element_size, int (*cmp)(const void *a, const void *b), int (*ignore)(const void *list, int last, const void *other), int (*check)(char *const name[2], const void *a, const void *b), void (*print)(char side, const void *element), void (*start_file)(const void *element)) {
     unsigned int i[2];
     int j;
     int diff;
@@ -670,8 +735,19 @@ compare_list(char *const name[2], const void *list[2], const zip_uint64_t list_l
 }
 
 
-static int
-ef_read(zip_t *za, zip_uint64_t idx, struct entry *e) {
+/*
+  Reads extra fields of a file in a zip archive.
+
+  Arguments:
+    za: zip archive
+    idx: index of file in zip archive
+    e: entry to add extra fields to
+
+  Returns:
+    0: success
+    -1: error
+*/
+static int ef_read(zip_t *za, zip_uint64_t idx, struct entry *e) {
     zip_int16_t n_local, n_central;
     zip_uint16_t i;
 
@@ -703,8 +779,19 @@ ef_read(zip_t *za, zip_uint64_t idx, struct entry *e) {
 }
 
 
-static int
-ef_compare(char *const name[2], const struct entry *e1, const struct entry *e2) {
+/*
+  Compares extra fields of two entries.
+
+  Arguments:
+    name: names of the two entries being compared
+    e1: first entry
+    e2: second entry
+
+  Returns:
+    0: no differences
+    1: extra fields differ
+*/
+static int ef_compare(char *const name[2], const struct entry *e1, const struct entry *e2) {
     struct ef *ef[2];
     zip_uint64_t n[2];
 
@@ -717,48 +804,83 @@ ef_compare(char *const name[2], const struct entry *e1, const struct entry *e2) 
 }
 
 
-static int
-ef_order(const void *ap, const void *bp) {
+/*
+  Checks order of two extra fields.
+
+  Arguments:
+    a: first extra field
+    b: second extra field
+
+  Returns:
+    <0: a < b
+    0: a == b
+    >0: a > b
+*/
+static int ef_order(const void *ap, const void *bp) {
     const struct ef *a, *b;
 
     a = (struct ef *)ap;
     b = (struct ef *)bp;
 
-    if (a->flags != b->flags)
+    if (a->flags != b->flags) {
         return a->flags - b->flags;
-    if (a->id != b->id)
+    }
+    if (a->id != b->id) {
         return a->id - b->id;
-    if (a->size != b->size)
+    }
+    if (a->size != b->size) {
         return a->size - b->size;
-    if (a->data == NULL || b->data == NULL)
+    }
+    if (a->data == NULL || b->data == NULL) {
         return a->data == b->data ? 0 : (a->data == NULL ? -1 : 1);
+    }
     return memcmp(a->data, b->data, a->size);
 }
 
 
-static void
-ef_print(char side, const void *p) {
+/*
+  Prints an extra field.
+
+  Arguments:
+    side: '-' for first entry, '+' for second entry
+    p: extra field to print
+*/
+static void ef_print(char side, const void *p) {
     const struct ef *ef = (struct ef *)p;
 
     diff_output_data(&output, side, ef->data, ef->size, "  %s extra field %s", ef->flags == ZIP_FL_LOCAL ? "local" : "central", map_enum(extra_fields, ef->id));
 }
 
 
-static int
-entry_cmp(const void *p1, const void *p2) {
+/*
+  Compares order of two entries.
+
+  Arguments:
+    p1: first entry
+    p2: second entry
+
+  Returns:
+    <0: p1 < p2
+    0: p1 == p2
+    >0: p1 > p2
+*/
+static int entry_cmp(const void *p1, const void *p2) {
     const struct entry *e1, *e2;
     int c;
 
     e1 = (struct entry *)p1;
     e2 = (struct entry *)p2;
 
-    if ((c = (ignore_case ? strcasecmp : strcmp)(e1->name, e2->name)) != 0)
+    if ((c = (ignore_case ? strcasecmp : strcmp)(e1->name, e2->name)) != 0) {
         return c;
+    }
     if (e1->size != e2->size) {
-        if (e1->size > e2->size)
+        if (e1->size > e2->size) {
             return 1;
-        else
+        }
+        else {
             return -1;
+        }
     }
     if (e1->crc != e2->crc) {
         return (int)e1->crc - (int)e2->crc;
@@ -771,8 +893,19 @@ entry_cmp(const void *p1, const void *p2) {
 }
 
 
-static int
-entry_ignore(const void *p, int last, const void *o) {
+/*
+  Checks if an entry should be ignored.
+
+  Arguments:
+    p: entry to check
+    last: 1 if this is the last entry in the list, 0 otherwise
+    o: other entry to compare to, or NULL if there is no other entry
+
+  Returns:
+    0: do not ignore
+    1: ignore
+*/
+static int entry_ignore(const void *p, int last, const void *o) {
     const struct entry *e = (const struct entry *)p;
     const struct entry *other = (const struct entry *)o;
 
@@ -798,8 +931,19 @@ entry_ignore(const void *p, int last, const void *o) {
 }
 
 
-static int
-entry_paranoia_checks(char *const name[2], const void *p1, const void *p2) {
+/*
+  Performs additional checks on two entries.
+
+  Arguments:
+    name: names of the two entries being compared
+    p1: first entry
+    p2: second entry
+
+  Returns:
+    0: no differences
+    1: entries differ
+*/
+static int entry_paranoia_checks(char *const name[2], const void *p1, const void *p2) {
     const struct entry *e1, *e2;
     int ret;
 
@@ -828,24 +972,44 @@ entry_paranoia_checks(char *const name[2], const void *p1, const void *p2) {
 }
 
 
-static void
-entry_print(char side, const void *p) {
+/*
+  Prints an entry.
+
+  Arguments:
+    side: '-' for first entry, '+' for second entry
+    p: entry to print
+*/
+static void entry_print(char side, const void *p) {
     const struct entry *e = (struct entry *)p;
 
     diff_output_file(&output, side, e->name, e->size, e->crc, e->last_modification_time);
 }
 
 
-static void
-entry_start_file(const void *p) {
+static void entry_start_file(const void *p) {
     const struct entry *e = (struct entry *)p;
 
     diff_output_start_file(&output, e->name, e->size, e->crc, e->last_modification_time);
 }
 
 
-static int
-test_file(zip_t *za, zip_uint64_t idx, const char *zipname, const char *filename, zip_uint64_t size, zip_uint32_t crc) {
+/*
+  Tests a file in a zip archive by comparing it to its contents to metadata in the archive.
+
+  Arguments:
+    za: zip archive
+    idx: index of the file in the archive
+    zipname: name of the zip archive
+    filename: name of the file
+    size: expected size of the file
+    crc: expected CRC of the file
+
+  Returns:
+    0: success
+    -1: error
+    -2: file doesn't match zip metadata
+*/
+static int test_file(zip_t *za, zip_uint64_t idx, const char *zipname, const char *filename, zip_uint64_t size, zip_uint32_t crc) {
     zip_file_t *zf;
     char buf[8192];
     zip_uint64_t nsize;
@@ -886,8 +1050,17 @@ test_file(zip_t *za, zip_uint64_t idx, const char *zipname, const char *filename
 }
 
 
-static const char *
-map_enum(const enum_map_t *map, uint32_t value) {
+/*
+  Maps an enum value to its name.
+
+  Arguments:
+    map: mapping of enum values to names
+    value: enum value to map
+
+  Returns:
+    name of the enum value
+*/
+static const char *map_enum(const enum_map_t *map, uint32_t value) {
     static char unknown[16];
     size_t i = 0;
 
@@ -902,4 +1075,122 @@ map_enum(const enum_map_t *map, uint32_t value) {
     unknown[sizeof(unknown) - 1] = '\0';
 
     return unknown;
+}
+
+
+/*
+  Initializes an archive.
+
+  Arguments:
+    a: archive to initialize
+*/
+static void archive_init(struct archive *a) {
+    a->name = NULL;
+    a->za = NULL;
+    a->nentry = 0;
+    a->nentry_allocated = 0;
+    a->entry = NULL;
+    a->comment = NULL;
+    a->comment_length = 0;
+}
+
+/*
+  Deinitializes an archive.
+
+  Arguments:
+    a: archive to deinitialize
+*/
+void archive_deinit(struct archive *a) {
+    int j;
+
+    if (a == NULL) {
+        return;
+    }
+
+    if (a->za) {
+        zip_close(a->za);
+    }
+    for (j = 0; j < a->nentry; j++) {
+        entry_deinit(a->entry + j);
+    }
+    free(a->entry);
+    /* comment is owned by za */
+}
+
+
+/*
+  Make sure there is enough space for at least amount more entries.
+
+  Arguments:
+    a: archive to grow
+    amount: number of free entries to ensure
+*/
+void archive_grow_entries(struct archive *a, zip_uint64_t amount) {
+    zip_uint64_t i;
+    zip_uint64_t new_nentry;
+
+    if (a->nentry + amount < a->nentry) {
+        fprintf(stderr, "%s: malloc failure\n", progname);
+        exit(1);
+    }
+    new_nentry = a->nentry + amount;
+
+    if (new_nentry <= a->nentry_allocated) {
+        return;
+    }
+    if (new_nentry > SIZE_MAX / sizeof(a->entry[0])) {
+        fprintf(stderr, "%s: malloc failure\n", progname);
+        exit(1);
+    }
+    if (new_nentry < a->nentry_allocated + 16) {
+        new_nentry = a->nentry_allocated + 16;
+    }
+
+    a->entry = realloc(a->entry, sizeof(a->entry[0]) * new_nentry);
+    if (a->entry == NULL) {
+        fprintf(stderr, "%s: malloc failure\n", progname);
+        exit(1);
+    }
+
+    for (i = a->nentry_allocated; i < new_nentry; i++) {
+        entry_init(a->entry + i);
+    }
+    a->nentry_allocated = new_nentry;
+}
+
+/*
+  Initializes an entry.
+
+  Arguments:
+    e: entry to initialize
+*/
+void entry_init(struct entry *e) {
+    e->name = NULL;
+    e->size = 0;
+    e->crc = 0;
+    e->last_modification_time = 0;
+    e->comp_method = 0;
+    e->n_extra_fields = 0;
+    e->extra_fields = NULL;
+    e->comment = NULL;
+    e->comment_length = 0;
+}
+
+/*
+  Deinitializes an entry.
+
+  Arguments:
+    e: entry to deinitialize
+*/
+void entry_deinit(struct entry *e) {
+    if (e == NULL) {
+        return;
+    }
+
+    free(e->name);
+
+    /* extra_fields[i].name is pointer to name */
+    /* extra_fields[i].data is owned by za */
+    free(e->extra_fields);
+    /* comment is owned by za */
 }
