@@ -33,6 +33,7 @@
 
 #include "zipint.h"
 
+#include "zip_random.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -252,6 +253,7 @@ static void trad_pkware_free(struct trad_pkware *ctx) {
         return;
     }
 
+    _zip_crypto_clear(ctx->password, strlen(ctx->password));
     free(ctx->password);
     _zip_buffer_free(ctx->buffer);
     zip_error_fini(&ctx->error);

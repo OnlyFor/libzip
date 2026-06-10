@@ -2,7 +2,15 @@ include(CheckFunctionExists)
 
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 
-add_library(zip STATIC
+set(ZIP_INCLUDE_DIRS
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/lib>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+set(ZIP_LIBRARIES ZLIB::ZLIB)
+
+set(ZIP_SOURCES
   zip_add.c
   zip_add_dir.c
   zip_add_entry.c
@@ -116,59 +124,68 @@ add_library(zip STATIC
   zip_utf-8.c
   ${CMAKE_CURRENT_BINARY_DIR}/zip_err_str.c
   )
-add_library(libzip::zip ALIAS zip)
 
 if(WIN32)
   target_compile_definitions(zip PRIVATE WIN32_LEAN_AND_MEAN)
-  target_sources(zip PRIVATE
+  set(ZIP_SOURCES ${ZIP_SOURCES}
     zip_source_file_win32.c
     zip_source_file_win32_named.c
     zip_source_file_win32_utf16.c
     zip_source_file_win32_utf8.c
     )
   if(CMAKE_SYSTEM_NAME MATCHES WindowsPhone OR CMAKE_SYSTEM_NAME MATCHES WindowsStore)
-    target_sources(zip PRIVATE zip_random_uwp.c)
+    set(ZIP_SOURCES ${ZIP_SOURCES} zip_random_uwp.c)
   else()
-    target_sources(zip PRIVATE zip_source_file_win32_ansi.c zip_random_win32.c)
-    target_link_libraries(zip PRIVATE advapi32)
+    set(ZIP_SOURCES ${ZIP_SOURCES} zip_source_file_win32_ansi.c zip_random_win32.c)
+    set(ZIP_LIBRARIES ${ZIP_LIBRARIES} advapi32)
   endif()
 else(WIN32)
-  target_sources(zip PRIVATE
-    zip_source_file_stdio_named.c
-    zip_random_unix.c
-    )
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_source_file_stdio_named.c zip_random_unix.c)
 endif(WIN32)
 
 if(HAVE_LIBBZ2)
-  target_sources(zip PRIVATE zip_algorithm_bzip2.c)
-  target_link_libraries(zip PRIVATE /usr/local/lib/x86_64-linux-gnu/libbz2.a)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_algorithm_bzip2.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} BZip2::BZip2)
 endif()
 
 if(HAVE_LIBLZMA)
-  target_sources(zip PRIVATE zip_algorithm_xz.c)
-  target_link_libraries(zip PRIVATE /usr/local/lib/liblzma.a)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_algorithm_xz.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} LibLZMA::LibLZMA)
 endif()
 
 if(HAVE_LIBZSTD)
-  target_sources(zip PRIVATE zip_algorithm_zstd.c)
-  target_link_libraries(zip PRIVATE /usr/local/lib/x86_64-linux-gnu/libzstd.a)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_algorithm_zstd.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} ${zstd_TARGET})
 endif()
 
 if(HAVE_COMMONCRYPTO)
-  target_sources(zip PRIVATE zip_crypto_commoncrypto.c)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_crypto_commoncrypto.c)
 elseif(HAVE_WINDOWS_CRYPTO)
-  target_sources(zip PRIVATE zip_crypto_win.c)
-  target_link_libraries(zip PRIVATE /usr/lib/x86_64-linux-gnu/libcrypto.a)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_crypto_win.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} bcrypt)
 elseif(HAVE_GNUTLS)
-  target_sources(zip PRIVATE zip_crypto_gnutls.c)
-  target_link_libraries(zip PRIVATE GnuTLS::GnuTLS Nettle::Nettle)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_crypto_gnutls.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} GnuTLS::GnuTLS Nettle::Nettle)
 elseif(HAVE_OPENSSL)
-  target_sources(zip PRIVATE zip_crypto_openssl.c)
-  target_link_libraries(zip PRIVATE OpenSSL::Crypto)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_crypto_openssl.c)
+  set(ZIP_LIBRARIES ${ZIP_LIBRARIES} OpenSSL::Crypto)
 endif()
 
 if(HAVE_CRYPTO)
-  target_sources(zip PRIVATE zip_winzip_aes.c zip_source_winzip_aes_decode.c zip_source_winzip_aes_encode.c)
+  set(ZIP_SOURCES ${ZIP_SOURCES} zip_winzip_aes.c zip_source_winzip_aes_decode.c zip_source_winzip_aes_encode.c)
+endif()
+
+add_library(zip ${ZIP_SOURCES})
+add_library(libzip::zip ALIAS zip)
+target_link_libraries(zip PRIVATE ${ZIP_LIBRARIES})
+target_include_directories(zip PUBLIC ${ZIP_INCLUDE_DIRS})
+
+if (BUILD_REGRESS)
+# For testing encryption, we replace zip_secure_random with zip_nonrandom.
+add_library(zip_nonrandom ${ZIP_SOURCES} ${PROJECT_SOURCE_DIR}/regress/programs/zip_nonrandom.c)
+target_compile_definitions(zip_nonrandom PRIVATE REGRESSION_NO_RANDOM)
+target_link_libraries(zip_nonrandom PRIVATE ${ZIP_LIBRARIES})
+target_include_directories(zip_nonrandom PUBLIC ${ZIP_INCLUDE_DIRS})
 endif()
 
 if(SHARED_LIB_VERSIONNING)
@@ -176,7 +193,6 @@ if(SHARED_LIB_VERSIONNING)
   set_target_properties(zip PROPERTIES VERSION 5.5 SOVERSION 5 MACHO_CURRENT_VERSION 6.5 MACHO_COMPATIBILITY_VERSION 6)
 endif()
 
-target_link_libraries(zip PRIVATE /usr/local/lib/libz.a)
 target_include_directories(zip
   PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/lib>
