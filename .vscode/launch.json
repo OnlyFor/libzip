@@ -43,19 +43,17 @@
                 "testfile.zip",
                 "add_from_zip",
                 "abac-repeat.txt",
-                "testdeflated.zzip",
+                "teststored.zzip",
                 "0",
                 "0",
-                "-1",
-                "zin_close",
-                "0"
+                "-1"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build/regress/sandbox",
             "environment": [],
             "externalConsole": false,
             "console": "integratedTerminal",
-            "MIMode": "gdb",
+            "MIMode": "lldb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

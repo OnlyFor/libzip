@@ -838,28 +838,32 @@ zip_int32_t _zip_dirent_size(zip_source_t *src, zip_uint16_t flags, zip_error_t 
     zip_int32_t size;
     bool local = (flags & ZIP_EF_LOCAL) != 0;
     int i;
-    zip_uint8_t b[6];
+    zip_uint8_t b[CDENTRYSIZE];
     zip_buffer_t *buffer;
 
     size = local ? LENTRYSIZE : CDENTRYSIZE;
 
-    if (zip_source_seek(src, local ? 26 : 28, SEEK_CUR) < 0) {
-        zip_error_set_from_source(error, src);
+    /* Central header has fixed fields after size pointers. */
+    if ((buffer = _zip_buffer_new_from_source(src, local ? LENTRYSIZE : 34, b, error)) == NULL) {
+        return -1;
+    }
+    if (_zip_buffer_left(buffer) != (local ? LENTRYSIZE : 34)) {
+        zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_CDIR_ENTRY_INVALID);
+        _zip_buffer_free(buffer);
         return -1;
     }
 
-    if ((buffer = _zip_buffer_new_from_source(src, local ? 4 : 6, b, error)) == NULL) {
+    if (memcmp(_zip_buffer_peek(buffer, 4), (local ? LOCAL_MAGIC : CENTRAL_MAGIC), 4) != 0) {
+        zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_CDIR_ENTRY_INVALID);
+        _zip_buffer_free(buffer);
         return -1;
     }
+
+    /* Skip to size pointers. */
+    _zip_buffer_skip(buffer, local ? 26 : 28);
 
     for (i = 0; i < (local ? 2 : 3); i++) {
         size += _zip_buffer_get_16(buffer);
-    }
-
-    if (!_zip_buffer_eof(buffer)) {
-        zip_error_set(error, ZIP_ER_INTERNAL, 0);
-        _zip_buffer_free(buffer);
-        return -1;
     }
 
     _zip_buffer_free(buffer);
