@@ -5,11 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "exact-read-integrity",
+            "name": "fseek",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/regress/exact_read_integrity",
-            "args": [],
+            "program": "${workspaceFolder}/build/regress/fseek",
+            "args": [
+                "test.zip",
+                "0",
+                "8"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/regress/data",
             "environment": [],

@@ -258,62 +258,56 @@ static zip_int64_t window_read(zip_source_t *src, void *_ctx, void *data, zip_ui
         return ret;
 
     case ZIP_SOURCE_SEEK: {
+        zip_uint64_t length;
         zip_int64_t new_offset;
+        zip_source_args_seek_t *args = ZIP_SOURCE_GET_ARGS(zip_source_args_seek_t, data, len, &ctx->error);
 
-        if (!ctx->end_valid) {
-            zip_source_args_seek_t *args = ZIP_SOURCE_GET_ARGS(zip_source_args_seek_t, data, len, &ctx->error);
+        /*
+          If we don't know the length and seek from the end, we seek in the lower source to get the new offset.
+        */
+        if (!ctx->end_valid && args->whence == SEEK_END) {
+            zip_int64_t lower_offset;
 
-            if (args == NULL) {
+            if (zip_source_seek(src, args->offset, args->whence) < 0) {
+                zip_error_set_from_source(&ctx->error, src);
                 return -1;
             }
-            if (args->whence == SEEK_END) {
-                if (zip_source_seek(src, args->offset, args->whence) < 0) {
-                    zip_error_set_from_source(&ctx->error, src);
-                    return -1;
-                }
-                new_offset = zip_source_tell(src);
-                if (new_offset < 0) {
-                    zip_error_set_from_source(&ctx->error, src);
-                    return -1;
-                }
-                if ((zip_uint64_t)new_offset < ctx->start) {
-                    zip_error_set(&ctx->error, ZIP_ER_INVAL, 0);
-                    (void)zip_source_seek(src, (zip_int64_t)ctx->offset, SEEK_SET);
-                    return -1;
-                }
-                ctx->offset = (zip_uint64_t)new_offset;
-                return 0;
-            }
-            else {
-                if (args->whence == SEEK_CUR) {
-                    if (args->offset > 0 && (zip_int64_t)ctx->offset + args->offset < args->offset) {
-                        zip_error_set(&ctx->error, ZIP_ER_INVAL, 0);
-                        return -1;
-                    }
-                    args->offset += (zip_int64_t)ctx->offset;
-                }
-                if (args->offset < 0) {
-                    zip_error_set(&ctx->error, ZIP_ER_INVAL, 0);
-                    return -1;
-                }
-                if (zip_source_seek(src, args->offset, SEEK_SET) < 0) {
-                    zip_error_set_from_source(&ctx->error, src);
-                    return -1;
-                }
-                ctx->offset = (zip_uint64_t)args->offset;
-                return 0;
-            }
-        }
-        else {
-            new_offset = zip_source_seek_compute_offset(ctx->offset - ctx->start, ctx->end - ctx->start, data, len, &ctx->error);
-
-            if (new_offset < 0) {
+            if ((lower_offset = zip_source_tell(src)) < 0) {
+                zip_error_set_from_source(&ctx->error, src);
                 return -1;
             }
-
-            ctx->offset = (zip_uint64_t)new_offset + ctx->start;
+            if ((zip_uint64_t)lower_offset < ctx->start) {
+                zip_error_set(&ctx->error, ZIP_ER_INVAL, 0);
+                return -1;
+            }
+            ctx->offset = (zip_uint64_t)lower_offset - ctx->start;
             return 0;
         }
+
+        /* 
+          If we don't know the length, we disable the end check in zip_source_seek_compute_offset by passing in the largest possible value and seek in the lower source to validate the new offset.
+        */
+        length = ctx->end_valid ? (ctx->end - ctx->start) : ZIP_INT64_MAX;
+        new_offset = zip_source_seek_compute_offset(ctx->offset - ctx->start, length, data, len, &ctx->error);
+
+        if (new_offset < 0) {
+            return -1;
+        }
+
+        if (new_offset + ctx->start < ctx->start) {
+            zip_error_set(&ctx->error, ZIP_ER_INVAL, 0);
+            return -1;
+        }
+        new_offset += ctx->start;
+
+        if (!ctx->end_valid) {
+            if (zip_source_seek(src, new_offset, SEEK_SET) < 0) {
+                zip_error_set_from_source(&ctx->error, src);
+                return -1;
+            }
+        }
+        ctx->offset = (zip_uint64_t)new_offset;
+        return 0;
     }
 
     case ZIP_SOURCE_STAT: {
