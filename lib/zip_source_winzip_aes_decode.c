@@ -47,6 +47,7 @@ struct winzip_aes {
     zip_uint64_t current_position;
 
     zip_winzip_aes_t *aes_ctx;
+    bool hmac_verify_failed;
     zip_error_t error;
 };
 
@@ -129,26 +130,29 @@ static int decrypt_header(zip_source_t *src, struct winzip_aes *ctx) {
 }
 
 
-static bool verify_hmac(zip_source_t *src, struct winzip_aes *ctx) {
+static void verify_hmac(zip_source_t *src, struct winzip_aes *ctx) {
     unsigned char computed[ZIP_CRYPTO_SHA1_LENGTH], from_file[HMAC_LENGTH];
     if (zip_source_read(src, from_file, HMAC_LENGTH) < HMAC_LENGTH) {
         zip_error_set_from_source(&ctx->error, src);
-        return false;
+        ctx->hmac_verify_failed = true;
+        return;
     }
 
     if (!_zip_winzip_aes_finish(ctx->aes_ctx, computed)) {
         zip_error_set(&ctx->error, ZIP_ER_INTERNAL, 0);
-        return false;
+        ctx->hmac_verify_failed = true;
+        return;
     }
     _zip_winzip_aes_free(ctx->aes_ctx);
     ctx->aes_ctx = NULL;
 
     if (memcmp(from_file, computed, HMAC_LENGTH) != 0) {
         zip_error_set(&ctx->error, ZIP_ER_CRC, 0);
-        return false;
+        ctx->hmac_verify_failed = true;
+        return;
     }
 
-    return true;
+    return;
 }
 
 
@@ -163,6 +167,7 @@ static zip_int64_t winzip_aes_decrypt(zip_source_t *src, void *ud, void *data, z
         return ctx->current_position == ctx->data_length;
 
     case ZIP_SOURCE_OPEN:
+        ctx->hmac_verify_failed = false;
         if (decrypt_header(src, ctx) < 0) {
             return -1;
         }
@@ -170,9 +175,7 @@ static zip_int64_t winzip_aes_decrypt(zip_source_t *src, void *ud, void *data, z
         return 0;
 
     case ZIP_SOURCE_READ:
-        if (len > ctx->data_length - ctx->current_position) {
-            len = ctx->data_length - ctx->current_position;
-        }
+        len = ZIP_MIN(len, ctx->data_length - ctx->current_position);
 
         if (len > 0) {
             if ((n = zip_source_read(src, data, len)) < 0) {
@@ -193,17 +196,17 @@ static zip_int64_t winzip_aes_decrypt(zip_source_t *src, void *ud, void *data, z
             }
 
             if (ctx->current_position == ctx->data_length) {
-                (void)verify_hmac(src, ctx);
+                verify_hmac(src, ctx);
             }
 
             return n;
         }
         else {
-            return zip_error_code_zip(&ctx->error) != ZIP_ER_OK ? -1 : 0;
+            return ctx->hmac_verify_failed ? -1 : 0;
         }
 
     case ZIP_SOURCE_CLOSE:
-        return 0;
+        return ctx->hmac_verify_failed ? -1 : 0;
 
     case ZIP_SOURCE_STAT: {
         zip_stat_t *st;
@@ -268,6 +271,7 @@ static struct winzip_aes *winzip_aes_new(zip_uint16_t encryption_method, const c
 
     ctx->encryption_method = encryption_method;
     ctx->aes_ctx = NULL;
+    ctx->hmac_verify_failed = false;
 
     zip_error_init(&ctx->error);
 
