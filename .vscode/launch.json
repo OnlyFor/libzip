@@ -5,6 +5,35 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "fseek",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/regress/fseek",
+            "args": [
+                "test.zip",
+                "0",
+                "8"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/regress/data",
+            "environment": [],
+            "externalConsole": false,
+            "console": "integratedTerminal",
+            "MIMode": "lldb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for lldb",
+                    "text": "command script import lldb.macosx.heap",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "test sandbox",
             "type": "cppdbg",
             "request": "launch",
@@ -14,19 +43,17 @@
                 "testfile.zip",
                 "add_from_zip",
                 "abac-repeat.txt",
-                "testdeflated.zzip",
+                "teststored.zzip",
                 "0",
                 "0",
-                "-1",
-                "zin_close",
-                "0"
+                "-1"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build/regress/sandbox",
             "environment": [],
             "externalConsole": false,
             "console": "integratedTerminal",
-            "MIMode": "gdb",
+            "MIMode": "lldb",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
