@@ -111,7 +111,6 @@ ZIP_EXTERN const zip_uint8_t *zip_file_extra_field_get(zip_t *za, zip_uint64_t i
 
     zip_dirent_t *de;
     zip_extra_field_t *ef;
-    int i;
 
     if ((flags & ZIP_EF_BOTH) == 0 || ((flags & ZIP_EF_BOTH) == ZIP_EF_BOTH)) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
@@ -178,8 +177,6 @@ ZIP_EXTERN const zip_uint8_t *zip_file_extra_field_get_by_id(zip_t *za, zip_uint
 
 ZIP_EXTERN zip_int16_t zip_file_extra_fields_count(zip_t *za, zip_uint64_t idx, zip_flags_t flags) {
     zip_dirent_t *de;
-    zip_extra_field_t *ef;
-    zip_uint16_t n;
 
     if ((flags & ZIP_EF_BOTH) == 0) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
@@ -202,8 +199,6 @@ ZIP_EXTERN zip_int16_t zip_file_extra_fields_count(zip_t *za, zip_uint64_t idx, 
 
 ZIP_EXTERN zip_int16_t zip_file_extra_fields_count_by_id(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_id, zip_flags_t flags) {
     zip_dirent_t *de;
-    zip_extra_field_t *ef;
-    zip_uint16_t n;
 
     if ((flags & ZIP_EF_BOTH) == 0) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
@@ -225,11 +220,6 @@ ZIP_EXTERN zip_int16_t zip_file_extra_fields_count_by_id(zip_t *za, zip_uint64_t
 
 
 ZIP_EXTERN int zip_file_extra_field_set(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_flags_t flags) {
-    zip_dirent_t *de;
-    zip_int32_t ls, cs, new_len;
-    zip_extra_field_t *ef, *ef_prev, *ef_new;
-    int i;
-
     if ((flags & ZIP_EF_BOTH) == 0) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
         return -1;

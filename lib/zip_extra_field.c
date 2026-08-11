@@ -421,7 +421,7 @@ void _zip_extrafields_delete_by_id(zip_extra_fields_t *fields, zip_uint16_t ef_i
 }
 
 const zip_uint8_t *_zip_extra_fields_get_by_id(const zip_extra_fields_t *extra_fields, zip_uint16_t *lenp, zip_uint16_t extra_field_id, zip_uint16_t extra_field_index, zip_flags_t flags, zip_error_t *error) {
-    zip_uint8_t *data;
+    const zip_uint8_t *data;
 
     if (flags & ZIP_EF_LOCAL) {
         data = _zip_ef_get_by_id(extra_fields->local, lenp, extra_field_id, extra_field_index, flags);
@@ -472,7 +472,6 @@ zip_int16_t _zip_extra_fields_count(const zip_extra_fields_t *extra_fields, zip_
 zip_extra_field_t *_zip_ef_set(zip_extra_field_t *ef_head, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_error_t *error) {
     zip_extra_field_t *ef_prev = NULL;
     zip_extra_field_t *ef_new, *ef;
-    zip_uint16_t i = 0;
     zip_int32_t new_len;
 
     ef = _zip_ef_find(ef_head, ef_id, ef_idx, &ef_prev);
