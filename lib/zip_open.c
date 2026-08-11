@@ -590,9 +590,9 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
             return -1;
         }
 
-        cd->entry[i].orig->extra_fields = _zip_ef_merge(cd->entry[i].orig->extra_fields, temp.extra_fields);
+        cd->entry[i].orig->extra_fields.local = temp.extra_fields.local;
         cd->entry[i].orig->local_extra_fields_read = 1;
-        temp.extra_fields = NULL;
+        temp.extra_fields.local = NULL;
 
         _zip_dirent_finalize(&temp);
 

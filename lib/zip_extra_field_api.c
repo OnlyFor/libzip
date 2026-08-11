@@ -63,7 +63,7 @@ ZIP_EXTERN int zip_file_extra_field_delete(zip_t *za, zip_uint64_t idx, zip_uint
 
     de = za->entry[idx].changes;
 
-    de->extra_fields = _zip_ef_delete_by_id(de->extra_fields, ZIP_EXTRA_FIELD_ALL, ef_idx, flags);
+    _zip_extra_fields_delete_by_id(&de->extra_fields, ZIP_EXTRA_FIELD_ALL, ef_idx, flags);
     return 0;
 }
 
@@ -100,7 +100,8 @@ ZIP_EXTERN int zip_file_extra_field_delete_by_id(zip_t *za, zip_uint64_t idx, zi
 
     de = za->entry[idx].changes;
 
-    de->extra_fields = _zip_ef_delete_by_id(de->extra_fields, ef_id, ef_idx, flags);
+    _zip_extra_fields_delete_by_id(&de->extra_fields, ef_id, ef_idx, flags);
+
     return 0;
 }
 
@@ -112,7 +113,7 @@ ZIP_EXTERN const zip_uint8_t *zip_file_extra_field_get(zip_t *za, zip_uint64_t i
     zip_extra_field_t *ef;
     int i;
 
-    if ((flags & ZIP_EF_BOTH) == 0) {
+    if ((flags & ZIP_EF_BOTH) == 0 || ((flags & ZIP_EF_BOTH) == ZIP_EF_BOTH)) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
         return NULL;
     }
@@ -127,26 +128,24 @@ ZIP_EXTERN const zip_uint8_t *zip_file_extra_field_get(zip_t *za, zip_uint64_t i
         }
     }
 
-    i = 0;
-    for (ef = de->extra_fields; ef; ef = ef->next) {
-        if (ef->flags & flags & ZIP_EF_BOTH) {
-            if (i < ef_idx) {
-                i++;
-                continue;
-            }
+    ef = (flags & ZIP_FL_LOCAL) ? de->extra_fields.local : de->extra_fields.central;
+    while (ef_idx > 0 && ef) {
+        ef = ef->next;
+        ef_idx--;
+    }
 
-            if (idp) {
-                *idp = ef->id;
-            }
-            if (lenp) {
-                *lenp = ef->size;
-            }
-            if (ef->size > 0) {
-                return ef->data;
-            }
-            else {
-                return empty;
-            }
+    if (ef) {
+        if (idp) {
+            *idp = ef->id;
+        }
+        if (lenp) {
+            *lenp = ef->size;
+        }
+        if (ef->size > 0) {
+            return ef->data;
+        }
+        else {
+            return empty;
         }
     }
 
@@ -173,7 +172,7 @@ ZIP_EXTERN const zip_uint8_t *zip_file_extra_field_get_by_id(zip_t *za, zip_uint
         }
     }
 
-    return _zip_ef_get_by_id(de->extra_fields, lenp, ef_id, ef_idx, flags, &za->error);
+    return _zip_extra_fields_get_by_id(&de->extra_fields, lenp, ef_id, ef_idx, flags, &za->error);
 }
 
 
@@ -197,14 +196,7 @@ ZIP_EXTERN zip_int16_t zip_file_extra_fields_count(zip_t *za, zip_uint64_t idx, 
         }
     }
 
-    n = 0;
-    for (ef = de->extra_fields; ef; ef = ef->next) {
-        if (ef->flags & flags & ZIP_EF_BOTH) {
-            n++;
-        }
-    }
-
-    return (zip_int16_t)n;
+    return _zip_extra_fields_count(&de->extra_fields, -1, flags);
 }
 
 
@@ -228,22 +220,15 @@ ZIP_EXTERN zip_int16_t zip_file_extra_fields_count_by_id(zip_t *za, zip_uint64_t
         }
     }
 
-    n = 0;
-    for (ef = de->extra_fields; ef; ef = ef->next) {
-        if (ef->id == ef_id && (ef->flags & flags & ZIP_EF_BOTH)) {
-            n++;
-        }
-    }
-
-    return (zip_int16_t)n;
+    return _zip_extra_fields_count(&de->extra_fields, (zip_int32_t)ef_id, flags);
 }
 
 
 ZIP_EXTERN int zip_file_extra_field_set(zip_t *za, zip_uint64_t idx, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_flags_t flags) {
     zip_dirent_t *de;
-    zip_uint32_t ls, cs;
+    zip_int32_t ls, cs, new_len;
     zip_extra_field_t *ef, *ef_prev, *ef_new;
-    int i, found, new_len;
+    int i;
 
     if ((flags & ZIP_EF_BOTH) == 0) {
         zip_error_set(&za->error, ZIP_ER_INVAL, 0);
@@ -272,85 +257,7 @@ ZIP_EXTERN int zip_file_extra_field_set(zip_t *za, zip_uint64_t idx, zip_uint16_
         return -1;
     }
 
-    de = za->entry[idx].changes;
-
-    ef = de->extra_fields;
-    ef_prev = NULL;
-    i = 0;
-    found = 0;
-
-    for (; ef; ef = ef->next) {
-        if (ef->id == ef_id && (ef->flags & flags & ZIP_EF_BOTH)) {
-            if (i == ef_idx) {
-                found = 1;
-                break;
-            }
-            i++;
-        }
-        ef_prev = ef;
-    }
-
-    if (i < ef_idx && ef_idx != ZIP_EXTRA_FIELD_NEW) {
-        zip_error_set(&za->error, ZIP_ER_INVAL, 0);
-        return -1;
-    }
-
-    if (flags & ZIP_EF_LOCAL) {
-        ls = _zip_ef_size(de->extra_fields, ZIP_EF_LOCAL);
-    }
-    else {
-        ls = 0;
-    }
-    if (flags & ZIP_EF_CENTRAL) {
-        cs = _zip_ef_size(de->extra_fields, ZIP_EF_CENTRAL);
-    }
-    else {
-        cs = 0;
-    }
-
-    new_len = ls > cs ? ls : cs;
-    if (found) {
-        new_len -= ef->size + 4;
-    }
-    new_len += len + 4;
-
-    if (new_len > ZIP_UINT16_MAX) {
-        zip_error_set(&za->error, ZIP_ER_EF_TOO_LARGE, 0);
-        return -1;
-    }
-
-    if ((ef_new = _zip_ef_new(ef_id, len, data, flags)) == NULL) {
-        zip_error_set(&za->error, ZIP_ER_MEMORY, 0);
-        return -1;
-    }
-
-    if (found) {
-        if ((ef->flags & ZIP_EF_BOTH) == (flags & ZIP_EF_BOTH)) {
-            ef_new->next = ef->next;
-            ef->next = NULL;
-            _zip_ef_free(ef);
-            if (ef_prev) {
-                ef_prev->next = ef_new;
-            }
-            else {
-                de->extra_fields = ef_new;
-            }
-        }
-        else {
-            ef->flags &= ~(flags & ZIP_EF_BOTH);
-            ef_new->next = ef->next;
-            ef->next = ef_new;
-        }
-    }
-    else if (ef_prev) {
-        ef_new->next = ef_prev->next;
-        ef_prev->next = ef_new;
-    }
-    else {
-        de->extra_fields = ef_new;
-    }
-
-    return 0;
+    return _zip_extra_fields_set(&za->entry[idx].changes->extra_fields, flags, ef_id, ef_idx, data, len, &za->error);
 }
 
 
@@ -381,11 +288,6 @@ int _zip_file_extra_field_prepare_for_change(zip_t *za, zip_uint64_t idx) {
         }
     }
 
-    if (e->orig && e->orig->extra_fields) {
-        if ((e->changes->extra_fields = _zip_ef_clone(e->orig->extra_fields, &za->error)) == NULL) {
-            return -1;
-        }
-    }
     e->changes->changed |= ZIP_DIRENT_EXTRA_FIELD;
 
     return 0;

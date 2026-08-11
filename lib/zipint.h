@@ -286,6 +286,7 @@ typedef struct zip_dostime zip_dostime_t;
 typedef struct zip_dirent zip_dirent_t;
 typedef struct zip_entry zip_entry_t;
 typedef struct zip_extra_field zip_extra_field_t;
+typedef struct zip_extra_fields zip_extra_fields_t;
 typedef struct zip_string zip_string_t;
 typedef struct zip_buffer zip_buffer_t;
 typedef struct zip_hash zip_hash_t;
@@ -347,6 +348,11 @@ struct zip_dostime {
     zip_uint16_t date;
 };
 
+struct zip_extra_fields {
+    zip_extra_field_t *local;   /* extra fields in local header */
+    zip_extra_field_t *central; /* extra fields in central directory */
+};
+
 struct zip_dirent {
     zip_uint32_t changed;
     bool local_extra_fields_read; /*      whether we already read in local header extra fields */
@@ -364,7 +370,7 @@ struct zip_dirent {
     zip_uint64_t comp_size;          /* (cl) size of compressed data */
     zip_uint64_t uncomp_size;        /* (cl) size of uncompressed data */
     zip_string_t *filename;          /* (cl) file name (NUL-terminated) */
-    zip_extra_field_t *extra_fields; /* (cl) extra fields, parsed */
+    zip_extra_fields_t extra_fields; /* (cl) extra fields, parsed */
     zip_string_t *comment;           /* (c)  file comment */
     zip_uint32_t disk_number;        /* (c)  disk number start */
     zip_uint16_t int_attrib;         /* (c)  internal file attributes */
@@ -398,7 +404,6 @@ struct zip_cdir {
 
 struct zip_extra_field {
     zip_extra_field_t *next;
-    zip_flags_t flags; /* in local/central header */
     zip_uint16_t id;   /* header id */
     zip_uint16_t size; /* data size */
     zip_uint8_t *data;
@@ -582,15 +587,26 @@ zip_int32_t _zip_dirent_size(zip_source_t *src, zip_uint16_t, zip_error_t *);
 int _zip_dirent_write(zip_t *za, zip_dirent_t *dirent, zip_flags_t flags);
 
 zip_extra_field_t *_zip_ef_clone(const zip_extra_field_t *, zip_error_t *);
-zip_extra_field_t *_zip_ef_delete_by_id(zip_extra_field_t *, zip_uint16_t, zip_uint16_t, zip_flags_t);
+zip_int16_t _zip_ef_count(const zip_extra_field_t *, zip_int32_t id);
+zip_extra_field_t *_zip_ef_delete_by_id(zip_extra_field_t *, zip_uint16_t, zip_uint16_t);
+zip_extra_field_t *_zip_ef_find(zip_extra_field_t *ef, zip_uint16_t ef_id, zip_uint16_t ef_idx, zip_extra_field_t **prev);
 void _zip_ef_free(zip_extra_field_t *);
-const zip_uint8_t *_zip_ef_get_by_id(const zip_extra_field_t *, zip_uint16_t *, zip_uint16_t, zip_uint16_t, zip_flags_t, zip_error_t *);
-zip_extra_field_t *_zip_ef_merge(zip_extra_field_t *, zip_extra_field_t *);
-zip_extra_field_t *_zip_ef_new(zip_uint16_t, zip_uint16_t, const zip_uint8_t *, zip_flags_t);
+const zip_uint8_t *_zip_ef_get_by_id(const zip_extra_field_t *, zip_uint16_t *, zip_uint16_t, zip_uint16_t, zip_flags_t);
+zip_extra_field_t *_zip_ef_new(zip_uint16_t, zip_uint16_t, const zip_uint8_t *);
 bool _zip_ef_parse(const zip_uint8_t *, zip_uint16_t, zip_flags_t, zip_extra_field_t **, zip_error_t *);
 zip_extra_field_t *_zip_ef_remove_internal(zip_extra_field_t *);
-zip_uint32_t _zip_ef_size(const zip_extra_field_t *, zip_flags_t);
-int _zip_ef_write(zip_t *za, const zip_extra_field_t *ef, zip_flags_t flags);
+zip_extra_field_t *_zip_ef_set(zip_extra_field_t *ef, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_error_t *error);
+zip_int32_t _zip_ef_size(const zip_extra_field_t *);
+int _zip_ef_write(zip_t *za, const zip_extra_field_t *ef);
+
+bool _zip_extra_fields_clone(zip_extra_fields_t *extra_fields, zip_error_t *error);
+void _zip_extra_fields_delete_by_id(zip_extra_fields_t *extra_fields, zip_uint16_t extra_field_id, zip_uint16_t extra_field_index, zip_flags_t flags);
+void _zip_extra_fields_fini(zip_extra_fields_t *extra_fields);
+void _zip_extra_fields_init(zip_extra_fields_t *extra_fields);
+bool _zip_extra_fields_replace(zip_extra_fields_t *extra_fields, zip_uint16_t extra_field_id, zip_uint16_t extra_field_index, const zip_uint8_t *extra_field_data, zip_uint16_t len, zip_flags_t flags, zip_error_t *error);
+const zip_uint8_t *_zip_extra_fields_get_by_id(const zip_extra_fields_t *extra_fields, zip_uint16_t *lenp, zip_uint16_t extra_field_id, zip_uint16_t extra_field_index, zip_flags_t flags, zip_error_t *error);
+zip_int16_t _zip_extra_fields_count(const zip_extra_fields_t *extra_fields, zip_int32_t id, zip_flags_t flags);
+bool _zip_extra_fields_set(zip_extra_fields_t *extra_fields, zip_flags_t flags, zip_uint16_t ef_id, zip_uint16_t ef_idx, const zip_uint8_t *data, zip_uint16_t len, zip_error_t *error);
 
 void _zip_entry_finalize(zip_entry_t *);
 void _zip_entry_init(zip_entry_t *);
