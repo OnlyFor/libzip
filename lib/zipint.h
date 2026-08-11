@@ -245,6 +245,8 @@ extern const int _zip_err_details_count;
 #define ZIP_ER_DETAIL_UTF8_COMMENT_MISMATCH 24            /* E UTF-8 comment is ASCII and doesn't match comment */
 #define ZIP_ER_DETAIL_COMPRESSED_DATA_TRAILING_GARBAGE 25 /* G garbage at end of compressed data */
 #define ZIP_ER_DETAIL_NUL_IN_FILENAME 26                  /* E NUL byte in file name */
+#define ZIP_ER_DETAIL_MISSING_ZIP64_EF 27                 /* E missing Zip64 extra field */
+
 
 /* directory entry: general purpose bit flags */
 
@@ -572,7 +574,7 @@ bool _zip_dirent_merge(zip_dirent_t *de, zip_dirent_t *de_orig, bool replacing_d
 bool _zip_dirent_needs_zip64(const zip_dirent_t *, zip_flags_t);
 zip_dirent_t *_zip_dirent_new(void);
 bool zip_dirent_process_ef_zip64(zip_dirent_t *zde, const zip_uint8_t *ef, zip_uint64_t got_len, bool local, zip_error_t *error);
-zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, bool local, zip_uint64_t central_compressed_size, bool check_consistency, zip_error_t *error);
+zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, bool local, bool is_zip64, zip_uint64_t central_compressed_size, bool check_consistency, zip_error_t *error);
 void _zip_dirent_set_version_needed(zip_dirent_t *de, bool force_zip64);
 void zip_dirent_torrentzip_normalize(zip_dirent_t *de);
 

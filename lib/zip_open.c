@@ -442,7 +442,7 @@ static bool _zip_read_cdir(zip_t *za, zip_buffer_t *buffer, zip_uint64_t buf_off
             grown = true;
         }
 
-        if ((cd->entry[i].orig = _zip_dirent_new()) == NULL || (entry_size = _zip_dirent_read(cd->entry[i].orig, za->src, cd_buffer, false, 0, za->open_flags & ZIP_CHECKCONS, error)) < 0) {
+        if ((cd->entry[i].orig = _zip_dirent_new()) == NULL || (entry_size = _zip_dirent_read(cd->entry[i].orig, za->src, cd_buffer, false, cd->is_zip64, 0, za->open_flags & ZIP_CHECKCONS, error)) < 0) {
             if (zip_error_code_zip(error) == ZIP_ER_INCONS) {
                 zip_error_set(error, ZIP_ER_INCONS, ADD_INDEX_TO_DETAIL(zip_error_code_system(error), i));
             }
@@ -536,6 +536,17 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
         min = max = 0;
     }
 
+    /*
+        Currently we use the presence of a Zip64 End of Central Directory do decide
+        if the archive is Zip64 and use that to decide the size of data descriptors
+        in local headers. This is not guaranteed to be correct. We could also assume
+        Zip64 format if any of the central directory entries has a Zip64 extra field.
+
+        Since we only read local headers when checking consistency, this is not a
+        problem for normal use, but only when checking consistency for archives using
+        data descriptors.
+    */
+
     for (i = 0; i < cd->nentry; i++) {
         if (cd->entry[i].orig->offset < min) {
             min = cd->entry[i].orig->offset;
@@ -565,7 +576,7 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
             return -1;
         }
 
-        if (_zip_dirent_read(&temp, za->src, NULL, true, cd->entry[i].orig->comp_size, true, error) == -1) {
+        if (_zip_dirent_read(&temp, za->src, NULL, true, cd->is_zip64, cd->entry[i].orig->comp_size, true, error) == -1) {
             if (zip_error_code_zip(error) == ZIP_ER_INCONS) {
                 zip_error_set(error, ZIP_ER_INCONS, ADD_INDEX_TO_DETAIL(zip_error_code_system(error), i));
             }

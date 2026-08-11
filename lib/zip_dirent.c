@@ -370,12 +370,11 @@ zip_dirent_t *_zip_dirent_new(void) {
    Returns size of dirent read if successful. On error, error is filled in and -1 is returned.
 */
 
-zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, bool local, zip_uint64_t central_compressed_size, bool check_consistency, zip_error_t *error) {
+zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t *buffer, bool local, bool is_zip64, zip_uint64_t central_compressed_size, bool check_consistency, zip_error_t *error) {
     zip_uint8_t buf[CDENTRYSIZE];
     zip_uint32_t size, variable_size;
     zip_uint16_t filename_len, comment_len, ef_len;
     zip_string_t *utf8_string;
-    bool is_zip64 = false;
 
     bool from_buffer = (buffer != NULL);
 
@@ -591,7 +590,13 @@ zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t 
                 return -1;
             }
         }
-        is_zip64 = true;
+        else if (is_zip64) {
+            zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_MISSING_ZIP64_EF);
+            if (!from_buffer) {
+                _zip_buffer_free(buffer);
+            }
+            return -1;
+        }
     }
 
 
@@ -610,6 +615,7 @@ zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t 
     if (local && zde->bitflags & ZIP_GPBF_DATA_DESCRIPTOR) {
         zip_uint32_t df_crc;
         zip_uint64_t df_comp_size, df_uncomp_size;
+
         if (zip_source_seek(src, central_compressed_size, SEEK_CUR) != 0 || (buffer = _zip_buffer_new_from_source(src, MAX_DATA_DESCRIPTOR_LENGTH, buf, error)) == NULL) {
             return -1;
         }
@@ -627,6 +633,7 @@ zip_int64_t _zip_dirent_read(zip_dirent_t *zde, zip_source_t *src, zip_buffer_t 
         }
         _zip_buffer_free(buffer);
 
+        /* According to the appnote, it should be 0, but some implementations write the actual value. */
         if ((zde->crc != 0 && zde->crc != df_crc) || (zde->comp_size != 0 && zde->comp_size != df_comp_size) || (zde->uncomp_size != 0 && zde->uncomp_size != df_uncomp_size)) {
             zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_DATA_DESCRIPTOR_MISMATCH);
             return -1;
