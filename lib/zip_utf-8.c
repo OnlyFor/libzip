@@ -94,12 +94,16 @@ static const zip_uint16_t _cp437_to_unicode[256] = {
 #define UTF_8_LEN_4_MATCH 0xf0
 #define UTF_8_CONTINUE_MASK 0xc0
 #define UTF_8_CONTINUE_MATCH 0x80
+#define UTF_8_CONTINUE_VALUE_MASK 0x3f
+
+/* smallest code point that has to be encoded with a sequence of the given length, indexed by number of continuation bytes */
+static const zip_uint32_t _utf8_minimum_code_point[4] = {0, 0x80, 0x800, 0x10000};
 
 
 zip_encoding_type_t _zip_guess_encoding(zip_string_t *str, zip_encoding_type_t expected_encoding) {
     zip_encoding_type_t enc;
     const zip_uint8_t *name;
-    zip_uint32_t i, j, ulen;
+    zip_uint32_t i, j, ulen, codepoint;
     bool can_be_ascii = true;
     bool can_be_utf8 = true;
     bool has_control_characters = false;
@@ -125,12 +129,15 @@ zip_encoding_type_t _zip_guess_encoding(zip_string_t *str, zip_encoding_type_t e
         can_be_ascii = false;
         if ((name[i] & UTF_8_LEN_2_MASK) == UTF_8_LEN_2_MATCH) {
             ulen = 1;
+            codepoint = name[i] & ~UTF_8_LEN_2_MASK;
         }
         else if ((name[i] & UTF_8_LEN_3_MASK) == UTF_8_LEN_3_MATCH) {
             ulen = 2;
+            codepoint = name[i] & ~UTF_8_LEN_3_MASK;
         }
         else if ((name[i] & UTF_8_LEN_4_MASK) == UTF_8_LEN_4_MATCH) {
             ulen = 3;
+            codepoint = name[i] & ~UTF_8_LEN_4_MASK;
         }
         else {
             can_be_utf8 = false;
@@ -147,6 +154,13 @@ zip_encoding_type_t _zip_guess_encoding(zip_string_t *str, zip_encoding_type_t e
                 can_be_utf8 = false;
                 goto done;
             }
+            codepoint = (codepoint << 6) | (name[i + j] & UTF_8_CONTINUE_VALUE_MASK);
+        }
+
+        /* reject overlong encodings, surrogate halves, and code points above U+10FFFF */
+        if (codepoint < _utf8_minimum_code_point[ulen] || (codepoint >= 0xd800 && codepoint <= 0xdfff) || codepoint > 0x10ffff) {
+            can_be_utf8 = false;
+            goto done;
         }
         i += ulen;
     }
