@@ -40,16 +40,62 @@
             "program": "${workspaceFolder}/build/regress/ziptool_regress",
             "args": [
                 "--",
-                "testfile.zip",
-                "add_from_zip",
-                "abac-repeat.txt",
-                "teststored.zzip",
+                "encrypt.zip",
+                "get_extra",
                 "0",
                 "0",
-                "-1"
+                "l",
+                "get_extra",
+                "0",
+                "0",
+                "c",
+                "get_extra",
+                "0",
+                "1",
+                "l",
+                "get_extra",
+                "0",
+                "1",
+                "c",
+                "get_extra",
+                "0",
+                "2",
+                "l"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build/regress/sandbox",
+            "environment": [],
+            "externalConsole": false,
+            "console": "integratedTerminal",
+            "MIMode": "lldb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "test sandbox 2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/regress/ziptool_regress",
+            "args": [
+                "--",
+                "hmac-error.zip",
+                "set_password",
+                "1234",
+                "cat",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build/regress/sandbox_hmac",
             "environment": [],
             "externalConsole": false,
             "console": "integratedTerminal",

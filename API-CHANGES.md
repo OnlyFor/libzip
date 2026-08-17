@@ -8,6 +8,15 @@ You can define `ZIP_DISABLE_DEPRECATED` before including `<zip.h>` to hide
 prototypes for deprecated functions, to find out about functions that
 might be removed at some point.
 
+## Changes in libzip 1.12 (2026)
+
+### Local and Central Extra Fields Are No Longer Combined
+
+In previous versions, if identical extra fields were present in both the local and central directory headers, they were combined internally. This meant that the combined field was moved before all unmerged local extra fields.
+
+libzip now keeps separate lists of local and central extra fields. This means that the order of extra fields is preserved.
+
+
 ## Changes in libzip 1.10.0 (2023)
 
 ### Deprecated `zip_source_zip` and `zip_source_zip_create`
