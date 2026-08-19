@@ -48,6 +48,7 @@ struct winzip_aes {
 
     zip_winzip_aes_t *aes_ctx;
     bool hmac_verify_failed;
+    bool hmac_verified;
     zip_error_t error;
 };
 
@@ -132,6 +133,12 @@ static int decrypt_header(zip_source_t *src, struct winzip_aes *ctx) {
 
 static void verify_hmac(zip_source_t *src, struct winzip_aes *ctx) {
     unsigned char computed[ZIP_CRYPTO_SHA1_LENGTH], from_file[HMAC_LENGTH];
+
+    if (ctx->hmac_verified) {
+        return;
+    }
+    ctx->hmac_verified = true;
+
     if (zip_source_read(src, from_file, HMAC_LENGTH) < HMAC_LENGTH) {
         zip_error_set_from_source(&ctx->error, src);
         ctx->hmac_verify_failed = true;
@@ -194,11 +201,16 @@ static zip_int64_t winzip_aes_decrypt(zip_source_t *src, void *ud, void *data, z
                 zip_error_set(&ctx->error, ZIP_ER_INTERNAL, 0);
                 return -1;
             }
+        }
+        else {
+            n = 0;
+        }
 
-            if (ctx->current_position == ctx->data_length) {
-                verify_hmac(src, ctx);
-            }
+        if (ctx->current_position == ctx->data_length) {
+            verify_hmac(src, ctx);
+        }
 
+        if (n > 0) {
             return n;
         }
         else {
@@ -206,6 +218,10 @@ static zip_int64_t winzip_aes_decrypt(zip_source_t *src, void *ud, void *data, z
         }
 
     case ZIP_SOURCE_CLOSE:
+        /* For empty files, we should verify the HMAC even if no data has been read. */
+        if (ctx->current_position == ctx->data_length) {
+            verify_hmac(src, ctx);
+        }
         return ctx->hmac_verify_failed ? -1 : 0;
 
     case ZIP_SOURCE_STAT: {
@@ -272,6 +288,7 @@ static struct winzip_aes *winzip_aes_new(zip_uint16_t encryption_method, const c
     ctx->encryption_method = encryption_method;
     ctx->aes_ctx = NULL;
     ctx->hmac_verify_failed = false;
+    ctx->hmac_verified = false;
 
     zip_error_init(&ctx->error);
 
