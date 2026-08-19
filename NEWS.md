@@ -6,6 +6,7 @@
 * Remove Mbed TLS support - the required functions were made private.
 * Make non-random tests work on macOS and Windows by using a special version of libzip.
 * Securely clear passwords and key material before freeing it.
+* Use SipHash hash function with per-table random keys. This prevents hash flooding attacks.
 * Add more comprehensive fuzzers for metadata and write code paths.
 
 # 1.11.4 [2025-05-23]
