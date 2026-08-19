@@ -15,8 +15,13 @@
    <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
-#include <inttypes.h>
-#include <string.h>
+#include "zipint.h"
 
-int siphash(const void *in, const size_t inlen, const void *k, uint8_t *out,
-            const size_t outlen);
+/**
+ * Computes a SipHash value.
+ *
+ * @param data The NUL terminated string to hash.
+ * @param key The 16-byte key to use for hashing.
+ * @return The computed SipHash value.
+ */
+zip_uint64_t siphash(const zip_uint8_t *data, const zip_uint8_t *key);
