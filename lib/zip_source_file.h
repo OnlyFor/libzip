@@ -62,6 +62,7 @@ struct zip_source_file_context {
     /* writing */
     char *tmpname;
     void *fout;
+    bool temp_output_created;
 
     zip_source_file_operations_t *ops;
     void *ops_userdata;
