@@ -278,6 +278,7 @@ int _zip_file_extra_field_prepare_for_change(zip_t *za, zip_uint64_t idx) {
         }
     }
 
+    _zip_extra_fields_clone(&e->changes->extra_fields, &za->error);
     e->changes->changed |= ZIP_DIRENT_EXTRA_FIELD;
 
     return 0;

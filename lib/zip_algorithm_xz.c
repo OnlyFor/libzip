@@ -176,6 +176,7 @@ static int map_error(lzma_ret ret) {
         return ZIP_ER_COMPRESSED_DATA;
 
     case LZMA_MEM_ERROR:
+    case LZMA_MEMLIMIT_ERROR:
         return ZIP_ER_MEMORY;
 
     case LZMA_OPTIONS_ERROR:
@@ -213,10 +214,10 @@ static bool start(void *ud, zip_stat_t *st, zip_file_attributes_t *attributes) {
     }
     else {
         if (ctx->method == ZIP_CM_LZMA) {
-            ret = lzma_alone_decoder(&ctx->zstr, UINT64_MAX);
+            ret = lzma_alone_decoder(&ctx->zstr, LZMA_WINDOW_LIMIT);
         }
         else {
-            ret = lzma_stream_decoder(&ctx->zstr, UINT64_MAX, LZMA_CONCATENATED);
+            ret = lzma_stream_decoder(&ctx->zstr, LZMA_WINDOW_LIMIT, LZMA_CONCATENATED);
         }
     }
 

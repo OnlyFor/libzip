@@ -54,6 +54,7 @@
 #define CAN_CLONE
 #endif
 
+static bool copy_permissions(zip_source_file_context_t *ctx);
 static int create_temp_file(zip_source_file_context_t *ctx, bool create_file);
 
 static zip_int64_t _zip_stdio_op_commit_write(zip_source_file_context_t *ctx);
@@ -113,6 +114,11 @@ static zip_int64_t _zip_stdio_op_commit_write(zip_source_file_context_t *ctx) {
     if (fclose(ctx->fout) < 0) {
         zip_error_set(&ctx->error, ZIP_ER_WRITE, errno);
         return -1;
+    }
+    if (!ctx->temp_output_created) {
+        if (!copy_permissions(ctx)) {
+            return -1;
+        }
     }
     if (rename(ctx->tmpname, ctx->fname) < 0) {
         zip_error_set(&ctx->error, ZIP_ER_RENAME, errno);
@@ -280,16 +286,20 @@ static zip_int64_t _zip_stdio_op_write(zip_source_file_context_t *ctx, const voi
 
 static int create_temp_file(zip_source_file_context_t *ctx, bool create_file) {
     char *temp;
-    int mode;
+    mode_t mode;
     zip_os_stat_t st;
     int fd = 0;
     char *start, *end;
 
     if (zip_os_stat(ctx->fname, &st) == 0) {
-        mode = st.st_mode;
+        /* If the file already exists, we copy permissions on commit, so err on the side of caution. */
+        ctx->temp_output_created = false;
+        mode = 0600;
     }
     else {
-        mode = -1;
+        /* If we create a new file, we want 0666 with umask applied. Since we can't read the current umask, we can't apply that mode on commit, so we set it here instead. */
+        ctx->temp_output_created = true;
+        mode = 0666;
     }
 
     size_t temp_size = strlen(ctx->fname) + 13;
@@ -317,15 +327,7 @@ static int create_temp_file(zip_source_file_context_t *ctx, bool create_file) {
         }
 
         if (create_file) {
-            if ((fd = open(temp, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, mode == -1 ? 0666 : (mode_t)mode)) >= 0) {
-                if (mode != -1) {
-                    /* open() honors umask(), which we don't want in this case */
-#ifdef HAVE_FCHMOD
-                    (void)fchmod(fd, (mode_t)mode);
-#else
-                    (void)chmod(temp, (mode_t)mode);
-#endif
-                }
+            if ((fd = open(temp, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, mode)) >= 0) {
                 break;
             }
             if (errno != EEXIST) {
@@ -380,4 +382,19 @@ static FILE *_zip_fopen_close_on_exec(const char *name, bool writeable) {
         return NULL;
     }
     return fp;
+}
+
+static bool copy_permissions(zip_source_file_context_t *ctx) {
+    zip_os_stat_t st;
+
+    if (zip_os_stat(ctx->fname, &st) < 0) {
+        zip_error_set(&ctx->error, ZIP_ER_RENAME, errno);
+        return false;
+    }
+    /* TODO: copy ACLs */
+    if (chmod(ctx->tmpname, st.st_mode) < 0) {
+        zip_error_set(&ctx->error, ZIP_ER_RENAME, errno);
+        return false;
+    }
+    return true;
 }

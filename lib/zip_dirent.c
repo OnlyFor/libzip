@@ -211,13 +211,17 @@ zip_int64_t _zip_cdir_write(zip_t *za, const zip_filelist_t *filelist, zip_uint6
 zip_dirent_t *_zip_dirent_clone(const zip_dirent_t *sde) {
     zip_dirent_t *tde;
 
+    /*
+     This does a shallow copy. Allocated members are copied when they are modified.
+     The changed flags keep track of which members need to be freed when a cloned entry is freed.
+     */
+
     if ((tde = (zip_dirent_t *)malloc(sizeof(*tde))) == NULL) {
         return NULL;
     }
 
     if (sde) {
         (void)memcpy_s(tde, sizeof(*tde), sde, sizeof(*sde));
-        _zip_extra_fields_clone(&tde->extra_fields, NULL);
     }
     else {
         _zip_dirent_init(tde);

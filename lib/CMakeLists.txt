@@ -11,6 +11,7 @@ set(ZIP_INCLUDE_DIRS
 set(ZIP_LIBRARIES ZLIB::ZLIB)
 
 set(ZIP_SOURCES
+  siphash.c
   zip_add.c
   zip_add_dir.c
   zip_add_entry.c

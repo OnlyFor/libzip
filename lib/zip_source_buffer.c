@@ -445,6 +445,7 @@ static bool buffer_grow_fragments(buffer_t *buffer, zip_uint64_t capacity, zip_e
 
 static buffer_t *buffer_new(const zip_buffer_fragment_t *fragments, zip_uint64_t nfragments, int free_data, zip_error_t *error) {
     buffer_t *buffer;
+    bool have_empty_fragment = false;
 
     if ((buffer = malloc(sizeof(*buffer))) == NULL) {
         return NULL;
@@ -480,6 +481,9 @@ static buffer_t *buffer_new(const zip_buffer_fragment_t *fragments, zip_uint64_t
         offset = 0;
         for (i = 0, j = 0; i < nfragments; i++) {
             if (fragments[i].length == 0) {
+                if (fragments[i].data != NULL && free_data) {
+                    have_empty_fragment = true;
+                }
                 continue;
             }
             if (fragments[i].data == NULL) {
@@ -502,6 +506,14 @@ static buffer_t *buffer_new(const zip_buffer_fragment_t *fragments, zip_uint64_t
         buffer->first_owned_fragment = free_data ? 0 : buffer->nfragments;
         buffer->fragment_offsets[buffer->nfragments] = offset;
         buffer->size = offset;
+
+        if (have_empty_fragment) {
+            for (i = 0; i < nfragments; i++) {
+                if (fragments[i].length == 0 && fragments[i].data != NULL) {
+                    free(fragments[i].data);
+                }
+            }
+        }
     }
 
     return buffer;

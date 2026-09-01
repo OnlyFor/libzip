@@ -88,10 +88,13 @@ If you want to customize the build, you can pass additional parameters to cmake 
 `LIBZIP_DO_INSTALL`
 : If you include libzip as a subproject, link it  statically and do not want to let it install its files, set this variable to `OFF`. Defaults to `ON`.
 
+`LIMIT_LZMA_WINDOW`
+: If set to a number, limits the LZMA window size to that number of bytes. Without a limit, LZMA compression can use up to 4GiB of memory. Defaults to no limit.
+
 If you want to compile with custom `CFLAGS`, set them in the environment
 before running `cmake`:
 ```sh
-CFLAGS=-DMY_CUSTOM_FLAG cmake ..
+cmake -DCMAKE_C_FLAGS="-DMY_CUSTOM_FLAG" ..
 ```
 
 You can also check the [cmake FAQ](https://gitlab.kitware.com/cmake/community/-/wikis/FAQ) for more information.
