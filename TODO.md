@@ -1,38 +1,66 @@
-## TODOs
+# TODOs
 
-Overhaul TODO file:
+# Contributions Welcome
 
-- Indicate which tasks we consider good candidates for contributions, noting if details should be discussed with the maintainers before starting.
-- Categorize and prioritize tasks.
-- Remove completed or obsolete tasks.
+These items are considered good candidates for contributions.
+
+## Ready for Implementation
+
+These items are clearly defined and can be directly implemented.
+
+- Enable sanitizers in CI builds.
+
+- Add test to add/replace/remove files in torrentzip archives using `zipsh`.
+
+## Discussion Needed
+
+These items need clarifications, especially regarding implementation details and expected behavior. Open a discussion before implementing them.
+
+- Add test program for testing `zip_source_t` API using the `shell` library.
+
+
+# Internal Only
+
+These items are intended for internal use only and are not meant to be implemented by external contributors.
+
+## zipsh
+
+- move add with data, replace to `zipsh_regress`
+- move count to `zipsh`
+- add/extract
+  - option to omit directory names in target file names
+  - option for recursive
+  - option to specify target filename (error if multiple source files specified)
+  - add: option to follow/omit symbolic links?
+- Create archive by default? Calling it with non-existing file doesn't give an error, which is counterintuitive.
+- Don't accept options after non-option arguments. Adapt tests.
+- Documentation.
+- Add more commands.
+- enum argument types: match case insensitive. default case as looks better
+- fnmatch(): error handling, honor case sensitivity from flags, use FNM_PATHNAME, FNM_PERIOD?
+- Add support for changing argument type depending on options (e.g. `cat -i`)
+- Switch tests to `zipsh_regress`.
+
+### zipsh shortcomings for converting tests
+
+- add API
+- archive_flags
+- unchange all
+- progress/cancel callbacks
+- mtime/dostime
+- fopen &c
+- zip archive hole, buffer
 
 ## Tests
 
-### zipsh
-
-- editline: Handle spaces and quotes when inserting common match prefix.
-- Sort options in help output.
-- Documentation.
-- Add more commands.
-- enum argument types: match case insensitive? default case?
-- Add support for changing argument type depending on options (e.g. `cat -i`)?
-- Add `-c` option to take command from the command line arguments.
-- Build `zipsh_regress` and `zipsh_regress_nonrandom`
-- Switch tests to `zipsh_regress`.
-- Deprecate `ziptool`.
-
 ### Infrastructure
 
-- Add test program for testing `zip_source_t` API using the `shell` library.
-- Switch existing dedicated test programs to sources shell or CMocka, where possible.
+- Switch existing one-off test programs to `zipsh_regress`, sources shell, or CMocka, where possible.
 
-### CI
 
-- Add CI build with sanitizers enabled.
 
 ### Specific Tests
 
-- Add test to add/replace/remove files in torrentzip archives.
 
 ## Fuzzing
 
@@ -46,17 +74,17 @@ Overhaul TODO file:
 
 ## Documentation
 
-- Improve internal documentation: directory layout, compatibility layer, shell API.
+- Create section for developers and contributors, add directory layout, compatibility layer, shell API.
 
 - Document that edge cases that are not explicitly allowed should be assumed not to work.
 
 ## Other
 
-- Implement `getopt_long` compatibility fallback.
-
-- Add central overflow check macros, maybe based on C23 `<stdckdint.h>` with fallback backwards compatibility implementation.
+- Use macros with overflow checks instead of ad-hoc implementations.
 
 - split `zip_source_t` in main part and reference so we can keep track which reference called open and we can invalidate references if the underlying source gets invalidated (e. g. by `zip_close`).
+
+- Add source command to tell lower layer that we've reached EOF. Use in WinZip AES to trigger HMAC check (or error if too much unread data remains).
 
 ## Prefixes
 

@@ -12,19 +12,23 @@ bool use_readline(const char *script_filename) {
     return script_filename == NULL && isatty(fileno(stdin));
 }
 
-static char *prompt_func(EditLine *el) {
-    return "zipsh> ";
+static const char *prompt_func(EditLine *el) {
+    return shell_get_prompt();
 }
 
+/* TODO: use completions directly instead of converting to matches */
 static unsigned char complete_wrapper(EditLine *el, int ch) {
     const LineInfo *line_info = el_line(el);
     size_t position = line_info->cursor - line_info->buffer;
     size_t last_word_length;
-    char **matches = complete(line_info->buffer, position, &last_word_length);
+    char open_quote = '\0';
+    completions_t *completions = complete(line_info->buffer, position, &last_word_length, &open_quote);
+    char **matches = completions_get_matches(completions);
     char *prefix;
     size_t prefix_length, i, full_match;
 
     if (matches == NULL || matches[0] == NULL) {
+        completions_free(completions);
         free_completions(matches);
         return CC_ERROR;
     }
@@ -47,11 +51,30 @@ static unsigned char complete_wrapper(EditLine *el, int ch) {
     }
 
     if (prefix_length > last_word_length) {
-        prefix[prefix_length] = '\0';
-        el_insertstr(el, prefix + last_word_length);
+        char s[3];
+        char *p = prefix + last_word_length;
+        while (p < prefix + last_word_length + prefix_length) {
+            if (*p == '\\' || *p == (open_quote ? open_quote : ' ')) {
+                s[0] = '\\';
+                s[1] = *p;
+                s[2] = '\0';
+            }
+            else {
+                s[0] = *p;
+                s[1] = '\0';
+            }
+            el_insertstr(el, s);
+            p++;
+        }
         if (full_match && matches[1] == NULL) {
+            if (open_quote != '\0') {
+                s[0] = open_quote;
+                s[1] = '\0';
+                el_insertstr(el, s);
+            }
             el_insertstr(el, " ");
         }
+        completions_free(completions);
         free_completions(matches);
         return CC_REFRESH;
     }
@@ -61,6 +84,7 @@ static unsigned char complete_wrapper(EditLine *el, int ch) {
     for (i = 0; matches[i] != NULL; i++) {
         printf("%s\n", matches[i]);
     }
+    completions_free(completions);
     free_completions(matches);
     return CC_REDISPLAY;
 }
@@ -70,6 +94,7 @@ bool execute_lines_readline() {
     EditLine *el;
     History *hist;
     HistEvent ev;
+    command_status_t status;
 
     if ((el = el_init("zipsh", stdin, stdout, stderr)) == NULL) {
         return false;
@@ -95,9 +120,14 @@ bool execute_lines_readline() {
         }
         history(hist, &ev, H_ENTER, line);
         error_message_t *error_message = NULL;
-        if (!execute_line(line, &error_message)) {
+
+        status = execute_line(line, &error_message);
+        if (status == COMMAND_STATUS_ERROR) {
             fprintf(stderr, "%s\n", error_message_get(error_message));
             error_message_free(error_message);
+        }
+        else if (status == COMMAND_STATUS_EXIT) {
+            break;
         }
     }
 

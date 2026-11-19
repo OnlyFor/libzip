@@ -1,35 +1,44 @@
+include(GenerateCommandTable)
+
 set(SHELL_SOURCES
   shell/argument.c
   shell/command.c
   shell/complete.c
   shell/error_message.c
   shell/help.c
+  shell/hex.c
+  shell/invocation.c
+  shell/prompt.c
   shell/shell.c
   shell/words.c
 )
 
 set(ZIPSH_SOURCES
+  zipsh/add.c
   zipsh/add_directory.c
+  zipsh/archive_comment.c
   zipsh/argument_types.c
   zipsh/cat.c
-  zipsh/count.c
   zipsh/delete.c
   zipsh/extra_field.c
+  zipsh/extra_field_add.c
   zipsh/extra_field_count.c
   zipsh/extra_field_delete.c
   zipsh/extra_field_get.c
-  zipsh/extra_field_set.c
+  zipsh/extra_field_replace.c
   zipsh/file_comment.c
   zipsh/file_compression.c
+  zipsh/file_crc.c
   zipsh/file_encryption.c
   zipsh/file_reference.c
+  zipsh/global.c
   zipsh/list.c
   zipsh/rename.c
   zipsh/set_default_password.c
   zipsh/standard_flags.c
   zipsh/stat.c
   zipsh/util.c
-  zipsh/zipsh.c
+  CACHE INTERNAL "ZIPSH_SOURCES"
 )
 
 set(COMPAT_SOURCES)
@@ -39,14 +48,14 @@ endif()
 if (NOT HAVE_GETLINE)
   list(APPEND COMPAT_SOURCES compat/getline.c)
 endif()
+if (NOT HAVE_FNMATCH)
+  list(APPEND COMPAT_SOURCES compat/fnmatch.c)
+endif()
 if (NOT HAVE_GETOPT)
   list(APPEND COMPAT_SOURCES compat/getopt.c)
 endif()
 if (NOT HAVE_VASPRINTF)
   list(APPEND COMPAT_SOURCES compat/vasprintf.c)
-endif()
-if (NOT HAVE_GETOPT_LONG)
-  list(APPEND COMPAT_SOURCES compat/getopt_long.c)
 endif()
 
 if (COMPAT_SOURCES)
@@ -55,19 +64,28 @@ if (COMPAT_SOURCES)
 endif()
 
 add_library(shell STATIC ${SHELL_SOURCES})
-target_include_directories(shell PRIVATE shell ${PROJECT_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR})
+target_include_directories(shell PUBLIC shell ${PROJECT_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_BINARY_DIR})
+if (USE_LINE_EDITING)
 if (HAVE_EDITLINE)
   target_link_libraries(shell editline::editline)
   target_sources(shell PRIVATE shell/editline.c)
 elseif (HAVE_READLINE)
   target_link_libraries(shell readline::readline)
   target_sources(shell PRIVATE shell/readline.c)
+elseif (HAVE_GETCONSOLEMODE)
+  target_sources(shell PRIVATE shell/windows_line_editing.c)
+else()
+  message(FATAL_ERROR "-- internal error: USE_LINE_EDITING is set, but no line editing implementation is available")
+endif()
 else()
   target_sources(shell PRIVATE shell/no_line_editing.c)
 endif()
 if (ENABLE_COVERAGE)
   target_compile_options(shell PRIVATE -coverage)
   target_link_options(shell PRIVATE -coverage)
+endif()
+if (TARGET compat)
+  target_link_libraries(shell compat)
 endif()
 
 foreach(PROGRAM zipcmp zipmerge ziptool)
@@ -88,12 +106,12 @@ endforeach()
 target_sources(zipcmp PRIVATE diff_output.c)
 target_link_libraries(zipcmp ${FTS_LIB} /usr/local/lib/libz.a)
 
-add_executable(zipsh ${ZIPSH_SOURCES} zipsh_commands.c)
-target_link_libraries(zipsh shell zip)
-if (TARGET compat)
-  target_link_libraries(zipsh compat)
-endif()
-target_include_directories(zipsh PRIVATE BEFORE ${PROJECT_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR} shell zipsh ${PROJECT_BINARY_DIR})
+add_library(zipsh_common STATIC ${ZIPSH_SOURCES})
+target_link_libraries(zipsh_common shell zip)
+target_include_directories(zipsh_common PUBLIC ${PROJECT_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR} shell zipsh ${PROJECT_BINARY_DIR})
+
+add_executable(zipsh zipsh/zipsh.c zipsh_commands.c)
+target_link_libraries(zipsh zipsh_common shell zip)
 if(LIBZIP_DO_INSTALL)
   install(TARGETS zipsh EXPORT ${PROJECT_NAME}-bin-targets DESTINATION bin)
 endif()
@@ -102,24 +120,8 @@ if (ENABLE_COVERAGE)
   target_link_options(zipsh PRIVATE -coverage)
 endif()
 
-# create zipsh_commands.c from sources
-set(ZIPSH_SOURCES_ABSOLUTE)
-foreach(source IN LISTS ZIPSH_SOURCES)
-  list(APPEND ZIPSH_SOURCES_ABSOLUTE "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
-endforeach()
-# Preserve list elements when forwarding to script mode via -D.
-string(REPLACE ";" "\\;" ZIPSH_SOURCES_ABS_ESCAPED "${ZIPSH_SOURCES_ABSOLUTE}")
-
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zipsh_commands.c
-  COMMAND "${CMAKE_COMMAND}"
-    "-DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
-    "-DCMAKE_CURRENT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
-    "-DSOURCES=${ZIPSH_SOURCES_ABS_ESCAPED}"
-    "-DOUTPUT_FILE=zipsh_commands.c"
-    "-P" "${PROJECT_SOURCE_DIR}/cmake/GenerateZipshCommands.cmake"
-  DEPENDS
-    ${PROJECT_SOURCE_DIR}/cmake/GenerateZipshCommands.cmake
-    ${ZIPSH_SOURCES_ABSOLUTE}
-  COMMENT "Generating zipsh_commands.c"
+# Generate zipsh_commands.c from command definitions in source files
+generate_command_table(
+  OUTPUT_FILE zipsh_commands.c
+  SOURCES ${ZIPSH_SOURCES}
 )

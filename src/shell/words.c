@@ -45,6 +45,9 @@ bool words_add_char(words_t *words, char c, error_message_t **error_message) {
             *error_message = error_message_new("out of memory");
             return false;
         }
+        for (size_t i = 0; i < words->n_words; i++) {
+            words->words[i] = new_text + (words->words[i] - words->text);
+        }
         words->text = new_text;
         words->text_capacity = new_capacity;
     }
@@ -91,9 +94,6 @@ bool words_parse_partial(words_t *words, const char *line, const char *end, erro
         case '\r':
         case '\n':
             if (quote == '\0') {
-                if (!words_add_char(words, '\0', error_message)) {
-                    return false;
-                }
                 if (!words_add_word(words, add_empty, error_message)) {
                     return false;
                 }
@@ -122,21 +122,36 @@ bool words_parse_partial(words_t *words, const char *line, const char *end, erro
             }
             break;
 
-        case '\\':
+        case '\\': {
+            char c;
             p++;
-            if (*p) {
-                if (!words_add_char(words, *p, error_message)) {
-                    return false;
-                }
+            switch (*p) {
+            case '\0':
+                *error_message = error_message_new("unexpected end of line after escape character");
+                return false;
+            case 'n':
+                c = '\n';
+                break;
+            case 'r':
+                c = '\r';
+                break;
+            case 't':
+                c = '\t';
+                break;
+            case '\\':
+            case '"':
+            case '\'':
+                c = *p;
+                break;
+            default:
+                *error_message = error_message_new_format("unknown escape sequence \\%c", *p);
+                return false;
             }
-            else {
-                if (error_message) {
-                    *error_message = error_message_new("unexpected end of line after escape character");
-                }
+            if (!words_add_char(words, c, error_message)) {
                 return false;
             }
             break;
-
+        }
         default:
             if (!words_add_char(words, *p, error_message)) {
                 return false;
@@ -146,7 +161,7 @@ bool words_parse_partial(words_t *words, const char *line, const char *end, erro
     }
 
     if (end == NULL) {
-        if (quote != '\0' && end == NULL) {
+        if (quote != '\0') {
             if (error_message) {
                 *error_message = error_message_new_format("unmatched quote %c", quote);
             }
@@ -156,6 +171,7 @@ bool words_parse_partial(words_t *words, const char *line, const char *end, erro
     else {
         /* For partial parsing, unclosed quotes are okay. */
         /* But we want to know if the last word was complete. */
+        words->open_quote = quote;
         add_empty = true;
     }
 

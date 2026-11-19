@@ -126,11 +126,10 @@ bool convert_uint(const argument_type_t *type, argument_t *out, const char *str,
     return true;
 }
 
-char **complete_filename(const argument_type_t *type, const char *str) {
+void complete_filename(completions_t *completions, const argument_type_t *type, const char *str) {
     /* TODO: implement */
     (void)type;
     (void)str;
-    return NULL;
 }
 
 /* clang-format off */
@@ -186,90 +185,14 @@ bool convert_argument(const argument_type_t *type, argument_t *out, const char *
     return type->convert(type, out, str, error_message);
 }
 
-char **complete_argument(const argument_type_t *type, const char *str) {
+completions_t *complete_argument(const argument_type_t *type, const char *str, size_t prefix_length) {
+    completions_t *completions;
     if (type->complete == NULL) {
         return NULL;
     }
-    return type->complete(type, str);
-}
-
-invocation_t *invocation_new(size_t options_capacity, size_t arguments_capacity) {
-    invocation_t *invocation = malloc(sizeof(invocation_t));
-    if (invocation == NULL) {
-        return NULL;
-    }
-
-    invocation->n_options = 0;
-    invocation->options = NULL;
-    invocation->arguments = NULL;
-    invocation->options_capacity = options_capacity;
-    invocation->arguments_capacity = arguments_capacity;
-
-    if (options_capacity > 0) {
-        invocation->options = malloc(options_capacity * sizeof(option_t));
-        if (invocation->options == NULL) {
-            invocation_free(invocation);
-            return NULL;
-        }
-    }
-    if (arguments_capacity > 0) {
-        invocation->arguments = malloc(arguments_capacity * sizeof(argument_t));
-        if (invocation->arguments == NULL) {
-            invocation_free(invocation);
-            return NULL;
-        }
-    }
-
-    return invocation;
-}
-
-void invocation_free(invocation_t *invocation) {
-    if (invocation == NULL) {
-        return;
-    }
-    free(invocation->options);
-    free(invocation->arguments);
-    free(invocation);
-}
-
-bool invocation_add_option(invocation_t *invocation, int id, argument_t value) {
-    if (invocation->n_options >= invocation->options_capacity) {
-        size_t new_capacity = invocation->options_capacity == 0 ? 1 : invocation->options_capacity * 2;
-        option_t *new_options = realloc(invocation->options, new_capacity * sizeof(option_t));
-        if (new_options == NULL) {
-            return false;
-        }
-        invocation->options = new_options;
-        invocation->options_capacity = new_capacity;
-    }
-    invocation->options[invocation->n_options].id = id;
-    invocation->options[invocation->n_options].value = value;
-    invocation->n_options++;
-    return true;
-}
-
-bool invocation_add_argument(invocation_t *invocation, argument_t value) {
-    if (invocation->n_arguments >= invocation->arguments_capacity) {
-        size_t new_capacity = invocation->arguments_capacity == 0 ? 1 : invocation->arguments_capacity * 2;
-        argument_t *new_arguments = realloc(invocation->arguments, new_capacity * sizeof(argument_t));
-        if (new_arguments == NULL) {
-            return false;
-        }
-        invocation->arguments = new_arguments;
-        invocation->arguments_capacity = new_capacity;
-    }
-    invocation->arguments[invocation->n_arguments] = value;
-    invocation->n_arguments++;
-    return true;
-}
-
-argument_t *invocation_get_option(invocation_t *invocation, int id) {
-    for (size_t i = 0; i < invocation->n_options; i++) {
-        if (invocation->options[i].id == id) {
-            return &invocation->options[i].value;
-        }
-    }
-    return NULL;
+    completions = completions_new(str, prefix_length);
+    type->complete(completions, type, str + prefix_length);
+    return completions;
 }
 
 
@@ -287,26 +210,13 @@ bool convert_enum(const argument_type_t *type, argument_t *out, const char *str,
     return false;
 }
 
-char **complete_enum(const argument_type_t *type, const char *str) {
+void complete_enum(completions_t *completions, const argument_type_t *type, const char *str) {
     argument_type_enum_entry_t *entries = (argument_type_enum_entry_t *)type->ud.pointer;
-    size_t count = 0;
     for (size_t i = 0; entries[i].string != NULL; i++) {
         if (strncmp(entries[i].string, str, strlen(str)) == 0) {
-            count++;
+            completions_add(completions, entries[i].string);
         }
     }
-    char **matches = malloc((count + 1) * sizeof(char *));
-    if (matches == NULL) {
-        return NULL;
-    }
-    size_t j = 0;
-    for (size_t i = 0; entries[i].string != NULL; i++) {
-        if (strncmp(entries[i].string, str, strlen(str)) == 0) {
-            matches[j++] = strdup(entries[i].string);
-        }
-    }
-    matches[j] = NULL;
-    return matches;
 }
 
 const char *enum_argument_to_string(const argument_type_t *type, argument_t value, bool string_for_unknown) {
@@ -318,7 +228,7 @@ const char *enum_argument_to_string(const argument_type_t *type, argument_t valu
         }
     }
     if (string_for_unknown) {
-        snprintf(unknown_string, sizeof(unknown_string), "unknown(%llu)", (unsigned long long)value.u64);
+        snprintf(unknown_string, sizeof(unknown_string), "unknown (%llu)", (unsigned long long)value.u64);
         return unknown_string;
     }
     return NULL;

@@ -10,14 +10,16 @@
 #include <readline/readline.h>
 
 static char **complete_wrapper(const char *text, int start, int end) {
-    char **matches = complete(text, start, NULL);
+    completions_t *completions = complete(text, start, NULL, NULL);
 
     /* Don't fall back to filename matching if no matches were found. */
-    if (matches == NULL) {
-        matches = malloc(sizeof(char *));
+    if (completions == NULL || completions->n_matches == 0) {
+        char **matches = malloc(sizeof(char *));
         matches[0] = NULL;
+        return matches;
     }
-    return matches;
+
+    return completions_get_matches(completions);
 }
 
 bool use_readline(const char *script_filename) {
@@ -27,17 +29,28 @@ bool use_readline(const char *script_filename) {
 
 bool execute_lines_readline() {
     rl_attempted_completion_function = complete_wrapper;
+    command_status_t status;
+
     while (true) {
-        char *line = readline("zipsh> ");
+        char *prompt;
+        char *line = NULL;
+        asprintf(&prompt, "%s ", shell_get_prompt());
+        line = readline(prompt);
+        free(prompt);
         if (line == NULL) {
             break;
         }
         if (*line != '\0') {
             add_history(line);
             error_message_t *error_message = NULL;
-            if (!execute_line(line, &error_message)) {
+            status = execute_line(line, &error_message);
+            if (status == COMMAND_STATUS_ERROR) {
                 fprintf(stderr, "%s\n", error_message_get(error_message));
                 error_message_free(error_message);
+            }
+            else if (status == COMMAND_STATUS_EXIT) {
+                free(line);
+                break;
             }
         }
         free(line);

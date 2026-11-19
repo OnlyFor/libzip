@@ -1,7 +1,10 @@
 
+include(GenerateCommandTable)
+
 if (CMOCKA_FOUND)
   set(CMOCKA_TEST_PROGRAMS
     crypto_clear
+    shell_completion
   )
 
   foreach(PROGRAM IN LISTS CMOCKA_TEST_PROGRAMS)
@@ -14,6 +17,8 @@ if (CMOCKA_FOUND)
 
   # The internal symbol is hidden when zip is a shared library, so link against the file directly.
   target_sources(crypto_clear PRIVATE ${PROJECT_SOURCE_DIR}/lib/zip_crypto.c)
+
+  target_link_libraries(shell_completion shell)
 endif()
 
 if (NIHTEST)
@@ -35,12 +40,75 @@ if (NIHTEST)
     ziptool_regress_nonrandom
   )
 
+  set(ZIPSH_REGRESS_SOURCES
+    programs/zipsh/add_nul.c
+    programs/zipsh/count.c
+    programs/zipsh/echo.c
+    programs/zipsh/source_nul.c
+    programs/zipsh/zipsh_regress.c
+  )
+
+  set(ZIPSH_SOURCES_RELATIVE)
+  foreach(source IN LISTS ZIPSH_SOURCES)
+    list(APPEND ZIPSH_SOURCES_RELATIVE "../src/${source}")
+  endforeach()
+
+
+  add_executable(zipsh_regress zipsh_regress_commands.c ${ZIPSH_REGRESS_SOURCES})
+  target_include_directories(zipsh_regress PUBLIC programs/zipsh_regress ${PROJECT_BINARY_DIR})
+  target_link_libraries(zipsh_regress zipsh_common)
+  if (ENABLE_COVERAGE)
+    target_compile_options(zipsh_regress PRIVATE -coverage)
+    target_link_options(zipsh_regress PRIVATE -coverage)
+  endif()
+
+  add_executable(zipsh_regress_nonrandom zipsh_regress_commands.c ${ZIPSH_REGRESS_SOURCES} ${ZIPSH_SOURCES_RELATIVE})
+  target_include_directories(zipsh_regress_nonrandom PUBLIC programs/zipsh_regress ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src/shell ${PROJECT_SOURCE_DIR}/src/zipsh ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(zipsh_regress_nonrandom shell zip_regress)
+  if (ENABLE_COVERAGE)
+    target_compile_options(zipsh_regress_nonrandom PRIVATE -coverage)
+    target_link_options(zipsh_regress_nonrandom PRIVATE -coverage)
+  endif()
+
+  set(SOURCESH_SOURCES
+    programs/sourcesh/at_eof.c
+    programs/sourcesh/begin_write.c
+    programs/sourcesh/buffer_source.c
+    programs/sourcesh/close.c
+    programs/sourcesh/commit_write.c
+    programs/sourcesh/file_source.c
+    programs/sourcesh/free.c
+    programs/sourcesh/is_seekable.c
+    programs/sourcesh/open.c
+    programs/sourcesh/opened_sources.c
+    programs/sourcesh/read.c
+    programs/sourcesh/rollback_write.c
+    programs/sourcesh/seek.c
+    programs/sourcesh/seek_write.c
+    programs/sourcesh/sourcesh.c
+    programs/sourcesh/supports.c
+    programs/sourcesh/stat.c
+    programs/sourcesh/tell.c
+    programs/sourcesh/tell_write.c
+    programs/sourcesh/window_source.c
+    programs/sourcesh/write.c
+    programs/zipsh/echo.c
+  )
+
+  add_executable(sourcesh sourcesh_commands.c ${SOURCESH_SOURCES})
+  target_include_directories(sourcesh PUBLIC programs/sourcesh ${PROJECT_BINARY_DIR})
+  target_link_libraries(sourcesh shell zip_regress)
+  if (ENABLE_COVERAGE)
+    target_compile_options(sourcesh PRIVATE -coverage)
+    target_link_options(sourcesh PRIVATE -coverage)
+  endif()
+
   set(ZIP_PROGRAMS ${TEST_PROGRAMS} ${HOLE_USERS})
 
   foreach(PROGRAM IN LISTS ZIP_PROGRAMS)
     if (PROGRAM STREQUAL "ziptool_regress_nonrandom")
       add_executable(${PROGRAM} programs/ziptool_regress.c)
-      target_link_libraries(${PROGRAM} zip_nonrandom)
+      target_link_libraries(${PROGRAM} zip_regress)
     else()
       add_executable(${PROGRAM} programs/${PROGRAM}.c)
       target_link_libraries(${PROGRAM} zip)
@@ -98,7 +166,9 @@ if (NIHTEST)
   if (TARGET zlib)
     set(path "$<TARGET_FILE_DIR:zlib>;${path}")
   endif()
+  if (NOT IS_WINDOWS)
   string(REPLACE ";" "\\;" path "${path}")
+  endif()
 
   # set(ENV{srcdir} ${PROJECT_SOURCE_DIR}/regress)
 
@@ -133,3 +203,17 @@ if(ENABLE_COVERAGE)
           COMMAND ${CMAKE_COMMAND} -E cmake_echo_color "Open coverage/index.html in browser to view results."
   )
 endif()
+
+
+# Generate zipsh_regress_commands.c from command definitions in source files
+set(ZIPSH_REGRESS_COMMAND_SOURCES ${ZIPSH_REGRESS_SOURCES} ${ZIPSH_SOURCES_RELATIVE})
+
+generate_command_table(
+  OUTPUT_FILE zipsh_regress_commands.c
+  SOURCES ${ZIPSH_REGRESS_COMMAND_SOURCES}
+)
+
+generate_command_table(
+  OUTPUT_FILE sourcesh_commands.c
+  SOURCES ${SOURCESH_SOURCES}
+)

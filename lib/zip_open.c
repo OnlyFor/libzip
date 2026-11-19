@@ -515,15 +515,41 @@ static bool check_magic(zip_uint64_t offset, zip_buffer_t *buffer, zip_uint64_t 
 }
 
 
+typedef struct zip_entry_span {
+    zip_uint64_t start; /* offset of the local header */
+    zip_uint64_t end;   /* offset just past the end of the entry's data, including its data descriptor if it uses one */
+    zip_uint64_t index; /* index of the entry in the central directory */
+} zip_entry_span_t;
+
+
+static int _zip_entry_span_compare(const void *a, const void *b) {
+    const zip_entry_span_t *span_a = (const zip_entry_span_t *)a;
+    const zip_entry_span_t *span_b = (const zip_entry_span_t *)b;
+
+    if (span_a->start != span_b->start) {
+        return span_a->start < span_b->start ? -1 : 1;
+    }
+    if (span_a->end != span_b->end) {
+        return span_a->end > span_b->end ? -1 : 1;
+    }
+    return 0;
+}
+
+
 /* _zip_checkcons:
    Checks the consistency of the central directory by comparing central
-   directory entries with local headers and checking for plausible
-   file and header offsets. Returns -1 if not plausible, else the
-   difference between the lowest and the highest fileposition reached */
+   directory entries with local headers, checking for plausible
+   file and header offsets, and checking that the local headers and
+   data of the entries cover the archive from the first local header
+   up to the central directory without overlapping or leaving gaps.
+   Returns -1 if not plausible, else the difference between the lowest
+   and the highest fileposition reached */
 
 static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error) {
     zip_uint64_t i;
-    zip_uint64_t min, max, j, tail_length;
+    zip_uint64_t min, max, j;
+    zip_entry_span_t *spans = NULL;
+    zip_int64_t local_metadata_size;
     struct zip_dirent temp;
     int detail;
 
@@ -531,6 +557,11 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
     if (cd->nentry) {
         max = cd->entry[0].orig->offset;
         min = cd->entry[0].orig->offset;
+
+        if ((spans = (zip_entry_span_t *)malloc(cd->nentry * sizeof(*spans))) == NULL) {
+            zip_error_set(error, ZIP_ER_MEMORY, 0);
+            return -1;
+        }
     }
     else {
         min = max = 0;
@@ -553,42 +584,47 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
         }
         if (min > (zip_uint64_t)cd->offset) {
             zip_error_set(error, ZIP_ER_NOZIP, 0);
-            return -1;
-        }
-
-        tail_length = _zip_string_length(cd->entry[i].orig->filename) + LENTRYSIZE;
-        if (ZIP_CHECK_ADD_OVERFLOW(cd->entry[i].orig->comp_size, tail_length) || ZIP_CHECK_ADD_OVERFLOW(cd->entry[i].orig->offset + tail_length, cd->entry[i].orig->comp_size)) {
-            zip_error_set(error, ZIP_ER_NOZIP, 0);
-            return -1;
-        }
-        j = cd->entry[i].orig->offset + cd->entry[i].orig->comp_size + tail_length;
-
-        if (j > max) {
-            max = j;
-        }
-        if (max > (zip_uint64_t)cd->offset) {
-            zip_error_set(error, ZIP_ER_NOZIP, 0);
+            free(spans);
             return -1;
         }
 
         if (zip_source_seek(za->src, (zip_int64_t)cd->entry[i].orig->offset, SEEK_SET) < 0) {
             zip_error_set_from_source(error, za->src);
+            free(spans);
             return -1;
         }
 
-        if (_zip_dirent_read(&temp, za->src, NULL, true, cd->is_zip64, cd->entry[i].orig->comp_size, true, error) == -1) {
+        if ((local_metadata_size = _zip_dirent_read(&temp, za->src, NULL, true, cd->is_zip64, cd->entry[i].orig->comp_size, true, error)) == -1) {
             if (zip_error_code_zip(error) == ZIP_ER_INCONS) {
                 zip_error_set(error, ZIP_ER_INCONS, ADD_INDEX_TO_DETAIL(zip_error_code_system(error), i));
             }
             _zip_dirent_finalize(&temp);
+            free(spans);
             return -1;
         }
 
         if (_zip_headercomp(cd->entry[i].orig, &temp) != 0) {
             zip_error_set(error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(ZIP_ER_DETAIL_ENTRY_HEADER_MISMATCH, i));
             _zip_dirent_finalize(&temp);
+            free(spans);
             return -1;
         }
+
+        if (ZIP_CHECK_ADD_OVERFLOW(cd->entry[i].orig->comp_size, local_metadata_size) || ZIP_CHECK_ADD_OVERFLOW(cd->entry[i].orig->comp_size + local_metadata_size, cd->entry[i].orig->offset)) {
+            zip_error_set(error, ZIP_ER_NOZIP, 0);
+            _zip_dirent_finalize(&temp);
+            free(spans);
+            return -1;
+        }
+        j = cd->entry[i].orig->offset + cd->entry[i].orig->comp_size + local_metadata_size;
+
+        if (j > max) {
+            max = j;
+        }
+
+        spans[i].start = cd->entry[i].orig->offset;
+        spans[i].end = j;
+        spans[i].index = i;
 
         cd->entry[i].orig->extra_fields.local = temp.extra_fields.local;
         cd->entry[i].orig->local_extra_fields_read = 1;
@@ -598,8 +634,43 @@ static zip_int64_t _zip_checkcons(zip_t *za, zip_cdir_t *cd, zip_error_t *error)
 
         if ((detail = zip_dirent_check_consistency(cd->entry[i].orig)) != 0) {
             zip_error_set(error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(detail, i));
+            free(spans);
             return -1;
         }
+    }
+
+    if (cd->nentry > 0) {
+        zip_uint64_t k;
+
+        qsort(spans, (size_t)cd->nentry, sizeof(*spans), _zip_entry_span_compare);
+
+        for (k = 1; k < cd->nentry; k++) {
+            if (spans[k].start < spans[k - 1].end) {
+                zip_error_set(error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(ZIP_ER_DETAIL_ENTRY_OVERLAPS_ENTRY, spans[k].index));
+                free(spans);
+                return -1;
+            }
+            if (spans[k].start > spans[k - 1].end) {
+                zip_error_set(error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(ZIP_ER_DETAIL_ENTRY_GAP, spans[k].index));
+                free(spans);
+                return -1;
+            }
+        }
+
+        /* We allow data before the first entry, which is used for self extracting archives. */
+
+        if (spans[cd->nentry - 1].end < (zip_uint64_t)cd->offset) {
+            zip_error_set(error, ZIP_ER_INCONS, ZIP_ER_DETAIL_CDIR_GAP);
+            free(spans);
+            return -1;
+        }
+        if (spans[cd->nentry - 1].end > (zip_uint64_t)cd->offset) {
+            zip_error_set(error, ZIP_ER_INCONS, MAKE_DETAIL_WITH_INDEX(ZIP_ER_DETAIL_ENTRY_OVERLAPS_CDIR, spans[cd->nentry - 1].index));
+            free(spans);
+            return -1;
+        }
+
+        free(spans);
     }
 
     return (max - min) < ZIP_INT64_MAX ? (zip_int64_t)(max - min) : ZIP_INT64_MAX;

@@ -12,6 +12,16 @@ struct error_message {
 
 typedef struct error_message error_message_t;
 
+struct completions {
+    char *prefix;
+    char **matches;
+    size_t n_matches;
+    size_t matches_capacity;
+};
+
+typedef struct completions completions_t;
+
+
 #if defined(__GNUC__) && __GNUC__ >= 4
 #define PRINTF_LIKE(n, m) __attribute__((__format__(__printf__, n, m)))
 #else
@@ -56,17 +66,24 @@ typedef struct argument_type argument_type_t;
 struct argument_type {
     char *name;
     bool (*convert)(const argument_type_t *type, argument_t *out, const char *str, error_message_t **error_message);
-    char **(*complete)(const argument_type_t *type, const char *str);
+    void (*complete)(completions_t *completions, const argument_type_t *type, const char *str);
     void (*free_ud)(argument_t ud);
     argument_t ud;
 };
 
+enum argument_cardinality {
+    ARGUMENT_OPTIONAL,
+    ARGUMENT_REQUIRED,
+    ARGUMENT_COLLECT
+};
+
+typedef enum argument_cardinality argument_cardinality_t;
 
 struct argument_definition {
     const char *name;
     const char *help;
     const argument_type_t *type;
-    bool required;
+    argument_cardinality_t cardinality;
     argument_t default_value;
 };
 
@@ -95,15 +112,17 @@ struct command {
 typedef struct command command_t;
 
 struct words {
-    char **words;
-    size_t n_words;
+    char **words;       /* array of parsed words */
+    size_t n_words;     /* number of parsed words */
+    char open_quote;    /* currently open quote character, NUL if none (only for partial parse) */
 
-    size_t words_capacity;
-    char *text;
-    size_t text_capacity;
-    size_t next_word_start;
-    size_t next_char;
+    size_t words_capacity;  /* capacity of the words array */
+    char *text;             /* buffer holding the parsed text */
+    size_t text_capacity;   /* capacity of the text buffer */
+    size_t next_word_start; /* start index of the word currently being parsed in the text buffer */
+    size_t next_char;       /* index of the next character to be parsed in the text buffer */
 };
+
 typedef struct words words_t;
 
 extern const argument_type_t argument_type_bool_instance;
@@ -136,10 +155,12 @@ struct argument_type_enum_entry {
 
 typedef struct argument_type_enum_entry argument_type_enum_entry_t;
 
+
+
 #define ARGUMENT_TYPE_ENUM(name, entries) { name, convert_enum, complete_enum, NULL, {.pointer=entries} }
 
 bool convert_enum(const argument_type_t *type, argument_t *out, const char *str, error_message_t **error_message);
-char **complete_enum(const argument_type_t *type, const char *str);
+void complete_enum(completions_t *completions, const argument_type_t *type, const char *str);
 
 
 #define COMMAND(name, help) command_t command_##name = {#name, help, name##_options, sizeof(name##_options) / sizeof(name##_options[0]), name##_arguments, sizeof(name##_arguments) / sizeof(name##_arguments[0]), name##_implementation}
@@ -154,14 +175,16 @@ bool execute_command(const command_t *cmd, int argc, char **argv, error_message_
 const command_t *find_command(const char *name);
 
 bool convert_argument(const argument_type_t *type, argument_t *out, const char *str, error_message_t **error_message);
-char **complete_argument(const argument_type_t *type, const char *str);
+completions_t *complete_argument(const argument_type_t *type, const char *str, size_t prefix_length);
+option_definition_t *command_find_short_option(const command_t *cmd, char short_name);
+option_definition_t *command_find_long_option(const command_t *cmd, const char *long_name, size_t long_name_len);
 
 error_message_t *error_message_new(const char *message);
 error_message_t *error_message_new_format(const char *fmt, ...) PRINTF_LIKE(1, 2);
 const char *error_message_get(error_message_t *error);
 void error_message_free(error_message_t *error);
 
-invocation_t *invocation_new(size_t options_capacity, size_t arguments_capacity);
+invocation_t *invocation_new(const command_t *cmd, int *early_exit_options, size_t argc, char **argv, error_message_t **error_message, completions_t **completions);
 void invocation_free(invocation_t *invocation);
 bool invocation_add_option(invocation_t *invocation, int id, argument_t value);
 bool invocation_add_argument(invocation_t *invocation, argument_t value);
@@ -175,6 +198,49 @@ bool words_parse(words_t *words, const char *line, error_message_t **error_messa
 bool words_parse_partial(words_t *words, const char *line, const char *end, error_message_t **error_message);
 void words_clear(words_t *words);
 
+bool print_command_help(const command_t *cmd, const char *prog_name, error_message_t **error_message);
+
 const char* enum_argument_to_string(const argument_type_t *type, argument_t value, bool string_for_unknown);
+
+#define VERSION_OPTION_ID 256
+
+#define SHELL_OPTIONS \
+    {'c', "command", NULL, "Execute command from command line", NULL}, \
+    {'h', "help", NULL, "Show help message", NULL}, \
+    {VERSION_OPTION_ID, "version", NULL, "Show version information", NULL}
+
+#define SHELL_ARGUMENT \
+    {"command|file", "Command to execute or file to read commands from", argument_type_string, ARGUMENT_COLLECT, {.string = NULL}}
+
+struct shell_command {
+    command_t command;
+    int shell_argument_index;
+    bool (*setup)(invocation_t *, error_message_t **);
+    bool (*cleanup)(bool ok, error_message_t **);
+};
+
+typedef struct shell_command shell_command_t;
+
+#define SHELL_MAIN(name, help, index) \
+    shell_command_t shell_command_##name = {{#name, help, name##_options, sizeof(name##_options) / sizeof(name##_options[0]), name##_arguments, sizeof(name##_arguments) / sizeof(name##_arguments[0]), NULL}, index, name##_setup, name##_cleanup};
+
+    int shell_main(shell_command_t *shell, int argc, char *argv[]);
+
+bool is_pattern(const char *str);
+
+completions_t *completions_new(const char *prefix, size_t prefix_length);
+void completions_free(completions_t *completions);
+void completions_sort(completions_t *completions);
+bool completions_add(completions_t *completions, const char *match);
+char **completions_get_matches(const completions_t *completions);
+
+typedef const char* (*shell_prompt_function_t)();
+
+const char* shell_get_prompt(void);
+void shell_set_prompt_function(shell_prompt_function_t prompt_function);
+void shell_set_prompt(const char *format, ...) PRINTF_LIKE(1, 2);
+
+zip_uint8_t *decode_hex(const char *hex, error_message_t **error_message);
+void print_hex(const zip_uint8_t *data, size_t len);
 
 #endif /* SHELL_H */

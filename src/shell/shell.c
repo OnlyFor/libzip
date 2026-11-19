@@ -31,6 +31,7 @@
   IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,13 +40,20 @@
 
 #include "compat/src_compat.h"
 
+bool exit_implementation(invocation_t *invocation, error_message_t **error_message) {
+    *error_message = error_message_new("internal error: exit command function should not be called");
+    return false;
+}
+
+COMMAND_NO_ARGUMENTS_OR_OPTIONS(exit, "exit the shell");
+
 words_t *words = NULL;
 
-bool execute_line(const char *line, error_message_t **error_message) {
-    bool ok = true;
+command_status_t execute_line(const char *line, error_message_t **error_message) {
+    command_status_t status = COMMAND_STATUS_OK;
 
     if (!words_parse(words, line, error_message)) {
-        return false;
+        return COMMAND_STATUS_ERROR;
     }
 
     if (words->n_words > 0) {
@@ -55,18 +63,21 @@ bool execute_line(const char *line, error_message_t **error_message) {
             if (error_message) {
                 *error_message = error_message_new_format("unknown command '%s'", words->words[0]);
             }
-            ok = false;
+            status = COMMAND_STATUS_ERROR;
+        }
+        else if (cmd->function == exit_implementation) {
+            status = COMMAND_STATUS_EXIT;
         }
         else if (!execute_command(cmd, (int)words->n_words, words->words, &local_error_message)) {
             if (error_message) {
                 *error_message = error_message_new_format("%s: %s", words->words[0], error_message_get(local_error_message));
                 error_message_free(local_error_message);
             }
-            ok = false;
+            status = COMMAND_STATUS_ERROR;
         }
     }
 
-    return ok;
+    return status;
 }
 
 
@@ -76,10 +87,15 @@ bool execute_lines(const char *filename, FILE *input) {
     char *line = NULL;
     size_t len = 0;
     bool ok = true;
+    command_status_t status;
 
     while (getline(&line, &len, input) != -1) {
         line_number++;
-        if (!execute_line(line, &error_message)) {
+        status = execute_line(line, &error_message);
+        if (status == COMMAND_STATUS_EXIT) {
+            break;
+        }
+        else if (status == COMMAND_STATUS_ERROR) {
             fprintf(stderr, "%s:%zu: %s\n", filename, line_number, error_message_get(error_message));
             error_message_free(error_message);
             error_message = NULL;
@@ -97,14 +113,14 @@ bool shell_loop(const char *script_filename) {
     bool ok = true;
 
     if ((words = words_new()) == NULL) {
-        fprintf(stderr, "Failed to allocate words structure\n");
+        fprintf(stderr, "out of memory\n");
         exit(1);
     }
 
     if (script_filename != NULL) {
         input = fopen(script_filename, "r");
         if (input == NULL) {
-            fprintf(stderr, "Failed to open file: %s\n", script_filename);
+            fprintf(stderr, "can't open script file '%s': %s\n", script_filename, strerror(errno));
             exit(1);
         }
         file_name = script_filename;
@@ -121,4 +137,87 @@ bool shell_loop(const char *script_filename) {
     }
     words_free(words);
     return ok;
+}
+
+/* clang-format off */
+static int early_exit_options[] = {
+    'h',
+     VERSION_OPTION_ID, 
+     0};
+/* clang-format on */
+
+int shell_main(shell_command_t *shell_command, int argc, char *argv[]) {
+    invocation_t *invocation = NULL;
+    error_message_t *error_message = NULL;
+    bool ok = true;
+
+    opterr = 0;
+
+    if ((invocation = invocation_new(&shell_command->command, early_exit_options, argc, argv, &error_message, NULL)) == NULL) {
+        fprintf(stderr, "%s: %s\n", argv[0], error_message_get(error_message));
+        error_message_free(error_message);
+        return 1;
+    }
+
+    if (invocation_get_option(invocation, 'h')) {
+        if (!print_command_help(&shell_command->command, argv[0], &error_message)) {
+            fprintf(stderr, "%s: %s\n", argv[0], error_message_get(error_message));
+            error_message_free(error_message);
+            return 1;
+        }
+        return 0;
+    }
+
+    if (invocation_get_option(invocation, VERSION_OPTION_ID)) {
+        printf("%s %s\n", shell_command->command.name, LIBZIP_VERSION);
+        return 0;
+    }
+
+    if (shell_command->setup && !shell_command->setup(invocation, &error_message)) {
+        fprintf(stderr, "%s: %s\n", argv[0], error_message_get(error_message));
+        error_message_free(error_message);
+        invocation_free(invocation);
+        return 1;
+    }
+
+    if (invocation_get_option(invocation, 'c')) {
+        int command_argc;
+        char **command_argv;
+        const command_t *command = find_command(invocation->arguments[shell_command->shell_argument_index].string);
+        if (command == NULL) {
+            fprintf(stderr, "%s: Unknown command: %s\n", argv[0], invocation->arguments[shell_command->shell_argument_index].string);
+            return 1;
+        }
+
+        command_argc = (int)(invocation->n_arguments - (shell_command->shell_argument_index));
+        command_argv = malloc(command_argc * sizeof(char *));
+        for (int i = 0; i < command_argc; i++) {
+            command_argv[i] = (char *)invocation->arguments[shell_command->shell_argument_index + i].string;
+        }
+
+        ok = execute_command(command, command_argc, command_argv, &error_message);
+        if (!ok) {
+            fprintf(stderr, "%s: %s\n", command->name, error_message_get(error_message));
+            error_message_free(error_message);
+        }
+        free(command_argv);
+    }
+
+    else {
+        ok = shell_loop(invocation->arguments[shell_command->shell_argument_index].string);
+    }
+
+    if (shell_command->cleanup && !shell_command->cleanup(ok, &error_message)) {
+        fprintf(stderr, "%s: %s\n", argv[0], error_message_get(error_message));
+        error_message_free(error_message);
+        ok = false;
+    }
+
+    invocation_free(invocation);
+
+    return ok ? 0 : 1;
+}
+
+bool is_pattern(const char *str) {
+    return strchr(str, '*') != NULL || strchr(str, '?') != NULL || strchr(str, '[') != NULL;
 }
